@@ -1,5 +1,3 @@
-// TODO: Game struct
-// TODO: Game.new
 // TODO: Game.run ?
 // TODO: Game.process_input
 // TODO: Game.update
@@ -8,6 +6,37 @@
 // TODO: Clear window with a color
 // TODO: I will need to track keystate myself, possible with a set
 // TODO: Simulate a lower resolution
+use pollster::FutureExt as _;
+
+struct Game {
+    window: winit::window::Window,
+    surface: wgpu::Surface,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+impl Game {
+    fn new(window: winit::window::Window) -> Self {
+        // TODO: Log all these things we're creating
+        // TODO: Especially log the default instances so we can review their settings
+        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+        let surface: wgpu::Surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let adapter: wgpu::Adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .block_on()
+            .unwrap();
+        let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .block_on()
+            .unwrap();
+        Game {
+            window,
+            surface,
+            device,
+            queue,
+        }
+    }
+}
 
 fn main() {
     // TODO: Process input
