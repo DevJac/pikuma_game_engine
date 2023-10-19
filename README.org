@@ -1,0 +1,8 @@
+* Goals
+** 15 minute goals
+What are some things I could optimistically hack together in 15 minutes?
+What would it look like to work on one of those things for 5 minutes?
+*** TODO Clear window with color
+*** TODO Plan how to render at a lower resolution
+Just draw up some plans in my notebook.
+*** TODO Find a test image and see if the lower resolution rendering works

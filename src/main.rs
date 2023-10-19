@@ -29,12 +29,66 @@ impl Game {
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .block_on()
             .unwrap();
-        Game {
+        let game = Game {
             window,
             surface,
             device,
             queue,
+        };
+        game.configure_surface();
+        game
+    }
+
+    fn configure_surface(&self) {
+        let window_inner_size = self.window.inner_size();
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                width: window_inner_size.width,
+                height: window_inner_size.height,
+                present_mode: wgpu::PresentMode::AutoVsync,
+                // The window surface does not support alpha
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                view_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
+            },
+        );
+    }
+
+    fn render(&self) {
+        // TODO: Log all these things we're creating
+        // TODO: Especially log the default instances so we can review their settings
+        let mut command_encoder: wgpu::CommandEncoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let surface_texture: wgpu::SurfaceTexture = self.surface.get_current_texture().unwrap();
+        let surface_texture_view: wgpu::TextureView = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        {
+            let _render_pass: wgpu::RenderPass =
+                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("render_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                // We're rendering to a window surface which ignores alpha
+                                a: 1.0,
+                            }),
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
         }
+        self.queue.submit([command_encoder.finish()]);
+        surface_texture.present();
     }
 }
 
@@ -43,8 +97,9 @@ fn main() {
     // TODO: Update game state
     // TODO: Render
     let event_loop = winit::event_loop::EventLoop::new();
-    let _window = winit::window::Window::new(&event_loop);
-    event_loop.run(|event, _, control_flow| match event {
+    let window: winit::window::Window = winit::window::Window::new(&event_loop).unwrap();
+    let game = Game::new(window);
+    event_loop.run(move |event, _, control_flow| match event {
         winit::event::Event::WindowEvent {
             window_id: _,
             event: window_event,
@@ -79,8 +134,7 @@ fn main() {
             // Programs that draw graphics continuously, like most games,
             // can render here unconditionally for simplicity.
             // See: https://docs.rs/winit/latest/winit/event/enum.Event.html#variant.MainEventsCleared
-
-            // TODO: Game rendering
+            game.render();
         }
         _ => {}
     });
