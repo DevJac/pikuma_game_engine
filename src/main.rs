@@ -120,6 +120,9 @@ fn main() {
             } => {
                 control_flow.set_exit();
             }
+            winit::event::WindowEvent::Resized(_) => {
+                game.configure_surface();
+            }
             _ => {}
         },
         winit::event::Event::DeviceEvent {
