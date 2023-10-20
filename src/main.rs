@@ -13,6 +13,57 @@ struct Game {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+}
+
+/// Counter-clockwise rotation matrix
+fn rotate_cc(angle_degrees: f32) -> glam::Mat2 {
+    let angle_radians = angle_degrees.to_radians();
+    glam::Mat2::from_cols_array(&[
+        angle_radians.cos(),
+        angle_radians.sin(),
+        -angle_radians.sin(),
+        angle_radians.cos(),
+    ])
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+struct Vertex {
+    position: glam::Vec2,
+    color: glam::Vec3,
+}
+
+const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    },
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x3,
+        offset: 4 * 2,
+        shader_location: 1,
+    },
+];
+
+fn triangle() -> Vec<Vertex> {
+    let top_vert = glam::Vec2::new(0.0, 0.5);
+    vec![
+        Vertex {
+            position: top_vert,
+            color: glam::Vec3::new(1.0, 0.0, 0.0),
+        },
+        Vertex {
+            position: rotate_cc(120.0) * top_vert,
+            color: glam::Vec3::new(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: rotate_cc(240.0) * top_vert,
+            color: glam::Vec3::new(0.0, 0.0, 1.0),
+        },
+    ]
 }
 
 impl Game {
@@ -29,11 +80,54 @@ impl Game {
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .block_on()
             .unwrap();
+        let triangle_vertices = triangle();
+        let triangle_vertice_bytes: &[u8] = bytemuck::cast_slice(triangle_vertices.as_slice());
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("vertex buffer"),
+            size: triangle_vertice_bytes.len() as u64,
+            usage: wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: true,
+        });
+        vertex_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(triangle_vertice_bytes);
+        vertex_buffer.unmap();
+        let shader_module: wgpu::ShaderModule =
+            device.create_shader_module(wgpu::include_wgsl!("shaders/main.wgsl"));
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("render pipeline"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: "vertex_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: VERTEX_ATTRIBUTES,
+                }],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: "fragment_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+        });
         let game = Game {
             window,
             surface,
             device,
             queue,
+            render_pipeline,
+            vertex_buffer,
         };
         game.configure_surface();
         game
@@ -67,9 +161,9 @@ impl Game {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         {
-            let _render_pass: wgpu::RenderPass =
+            let mut render_pass: wgpu::RenderPass =
                 command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("render_pass"),
+                    label: Some("render pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &surface_texture_view,
                         resolve_target: None,
@@ -86,6 +180,9 @@ impl Game {
                     })],
                     depth_stencil_attachment: None,
                 });
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..3, 0..1);
         }
         self.queue.submit([command_encoder.finish()]);
         surface_texture.present();
