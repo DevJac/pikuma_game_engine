@@ -8,13 +8,44 @@
 // TODO: Simulate a lower resolution
 use pollster::FutureExt as _;
 
-struct Game {
-    window: winit::window::Window,
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+struct TextureVertex {
+    position: glam::Vec2,
+    uv: glam::Vec2,
+}
+
+const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    },
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x2,
+        offset: 4 * 2,
+        shader_location: 1,
+    },
+];
+
+fn square() -> Vec<TextureVertex> {
+    let v0 = TextureVertex {
+        position: glam::Vec2::new(-1.0, 1.0),
+        uv: glam::Vec2::new(0.0, 0.0),
+    };
+    let v1 = TextureVertex {
+        position: glam::Vec2::new(-1.0, -1.0),
+        uv: glam::Vec2::new(0.0, 1.0),
+    };
+    let v2 = TextureVertex {
+        position: glam::Vec2::new(1.0, -1.0),
+        uv: glam::Vec2::new(1.0, 1.0),
+    };
+    let v3 = TextureVertex {
+        position: glam::Vec2::new(1.0, 1.0),
+        uv: glam::Vec2::new(1.0, 0.0),
+    };
+    vec![v0, v1, v3, v3, v1, v2]
 }
 
 /// Counter-clockwise rotation matrix
@@ -48,6 +79,9 @@ const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
     },
 ];
 
+// TODO: Make a TextureVertex struct that holds a position and uv coords
+// TODO: Make a square function that returns a unit square of TextureVertex
+
 fn triangle() -> Vec<Vertex> {
     let top_vert = glam::Vec2::new(0.0, 0.5);
     vec![
@@ -64,6 +98,19 @@ fn triangle() -> Vec<Vertex> {
             color: glam::Vec3::new(0.0, 0.0, 1.0),
         },
     ]
+}
+
+struct Game {
+    window: winit::window::Window,
+    surface: wgpu::Surface,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    vertex_buffer: wgpu::Buffer,
+    square_vertex_buffer: wgpu::Buffer,
+    low_res_render_pipeline: wgpu::RenderPipeline,
+    low_res_texture_view: wgpu::TextureView,
+    surface_render_pipeline: wgpu::RenderPipeline,
+    surface_render_bind_group: wgpu::BindGroup,
 }
 
 impl Game {
@@ -93,41 +140,130 @@ impl Game {
             .get_mapped_range_mut()
             .copy_from_slice(triangle_vertice_bytes);
         vertex_buffer.unmap();
+        let square_verts = square();
+        let square_vert_bytes: &[u8] = bytemuck::cast_slice(square_verts.as_slice());
+        let square_vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("square buffer"),
+            size: square_vert_bytes.len() as u64,
+            usage: wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: true,
+        });
+        square_vertex_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(square_vert_bytes);
+        square_vertex_buffer.unmap();
         let shader_module: wgpu::ShaderModule =
             device.create_shader_module(wgpu::include_wgsl!("shaders/main.wgsl"));
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("render pipeline"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: "vertex_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: VERTEX_ATTRIBUTES,
-                }],
+        let low_res_render_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("render pipeline"),
+                layout: None,
+                vertex: wgpu::VertexState {
+                    module: &shader_module,
+                    entry_point: "vertex_main",
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: VERTEX_ATTRIBUTES,
+                    }],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader_module,
+                    entry_point: "fragment_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview: None,
+            });
+        let low_res_texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("low res texture"),
+            size: wgpu::Extent3d {
+                width: 20,
+                height: 20,
+                depth_or_array_layers: 1,
             },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: "fragment_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview: None,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[wgpu::TextureFormat::Bgra8UnormSrgb],
+        });
+        let surface_render_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("surface render pipeline"),
+                layout: None,
+                vertex: wgpu::VertexState {
+                    module: &shader_module,
+                    entry_point: "texture_to_texture_vertex_main",
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<TextureVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: TEXTURE_VERTEX_ATTRIBUTES,
+                    }],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader_module,
+                    entry_point: "texture_to_texture_fragment_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview: None,
+            });
+        let surface_render_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("low res sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 0.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        });
+        let low_res_texture_view =
+            low_res_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let surface_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("surface render bind group"),
+            layout: &surface_render_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&low_res_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&surface_render_sampler),
+                },
+            ],
         });
         let game = Game {
             window,
             surface,
             device,
             queue,
-            render_pipeline,
             vertex_buffer,
+            square_vertex_buffer,
+            low_res_render_pipeline,
+            low_res_texture_view,
+            surface_render_pipeline,
+            surface_render_bind_group,
         };
         game.configure_surface();
         game
@@ -161,9 +297,33 @@ impl Game {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         {
-            let mut render_pass: wgpu::RenderPass =
+            let mut low_res_render_pass: wgpu::RenderPass =
                 command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("render pass"),
+                    label: Some("low res render pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.low_res_texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                // We're rendering to a window surface which ignores alpha
+                                a: 1.0,
+                            }),
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
+            low_res_render_pass.set_pipeline(&self.low_res_render_pipeline);
+            low_res_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            low_res_render_pass.draw(0..3, 0..1);
+        }
+        {
+            let mut surface_render_pass: wgpu::RenderPass =
+                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("surface render pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &surface_texture_view,
                         resolve_target: None,
@@ -180,9 +340,10 @@ impl Game {
                     })],
                     depth_stencil_attachment: None,
                 });
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..3, 0..1);
+            surface_render_pass.set_pipeline(&self.surface_render_pipeline);
+            surface_render_pass.set_bind_group(0, &self.surface_render_bind_group, &[]);
+            surface_render_pass.set_vertex_buffer(0, self.square_vertex_buffer.slice(..));
+            surface_render_pass.draw(0..6, 0..1);
         }
         self.queue.submit([command_encoder.finish()]);
         surface_texture.present();
