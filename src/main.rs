@@ -355,8 +355,11 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new();
     let window: winit::window::Window = winit::window::Window::new(&event_loop).unwrap();
     let game = Game::new(window);
-    let mut rendered_frames = 0;
     let start_time = std::time::Instant::now();
+    let mut last_render_time = start_time;
+    // Render time exponential moving average in seconds
+    let mut render_time_ema_seconds: f32 = 0.0;
+    let mut rendered_frames: u64 = 0;
     event_loop.run(move |event, _, control_flow| {
         let time_since_start: std::time::Duration = std::time::Instant::now() - start_time;
         match event {
@@ -398,12 +401,14 @@ fn main() {
                 // can render here unconditionally for simplicity.
                 // See: https://docs.rs/winit/latest/winit/event/enum.Event.html#variant.MainEventsCleared
                 game.render(time_since_start);
+                let now = std::time::Instant::now();
+                let render_time_seconds: f32 = (now - last_render_time).as_secs_f32();
+                render_time_ema_seconds *= 0.99;
+                render_time_ema_seconds += 0.01 * render_time_seconds;
+                last_render_time = now;
                 rendered_frames += 1;
                 if rendered_frames % 100 == 0 {
-                    println!(
-                        "FPS: {:.0}",
-                        rendered_frames as f32 / time_since_start.as_secs_f32()
-                    );
+                    println!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
                 }
             }
             _ => {}
