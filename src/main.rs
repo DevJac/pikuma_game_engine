@@ -108,6 +108,7 @@ struct Game {
     square_vertex_buffer: wgpu::Buffer,
     low_res_render_pipeline: wgpu::RenderPipeline,
     low_res_texture_view: wgpu::TextureView,
+    low_res_texture_resolved_view: wgpu::TextureView,
     surface_render_pipeline: wgpu::RenderPipeline,
     surface_render_bind_group: wgpu::BindGroup,
 }
@@ -156,7 +157,11 @@ impl Game {
                 },
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
+                multisample: wgpu::MultisampleState {
+                    count: 4,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader_module,
                     entry_point: "fragment_main",
@@ -176,12 +181,28 @@ impl Game {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: 4,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[wgpu::TextureFormat::Bgra8UnormSrgb],
         });
+        let low_res_texture_resolved: wgpu::Texture =
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("low res texture resolved"),
+                size: wgpu::Extent3d {
+                    width: 100,
+                    height: 100,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[wgpu::TextureFormat::Bgra8UnormSrgb],
+            });
         let surface_render_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("surface render pipeline"),
@@ -225,13 +246,15 @@ impl Game {
         });
         let low_res_texture_view =
             low_res_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let low_res_texture_resolved_view =
+            low_res_texture_resolved.create_view(&wgpu::TextureViewDescriptor::default());
         let surface_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("surface render bind group"),
             layout: &surface_render_pipeline.get_bind_group_layout(0),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&low_res_texture_view),
+                    resource: wgpu::BindingResource::TextureView(&low_res_texture_resolved_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -247,6 +270,7 @@ impl Game {
             square_vertex_buffer,
             low_res_render_pipeline,
             low_res_texture_view,
+            low_res_texture_resolved_view,
             surface_render_pipeline,
             surface_render_bind_group,
         };
@@ -300,7 +324,7 @@ impl Game {
                     label: Some("low res render pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &self.low_res_texture_view,
-                        resolve_target: None,
+                        resolve_target: Some(&self.low_res_texture_resolved_view),
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
                                 r: 0.1,
