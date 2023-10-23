@@ -82,19 +82,19 @@ const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
 // TODO: Make a TextureVertex struct that holds a position and uv coords
 // TODO: Make a square function that returns a unit square of TextureVertex
 
-fn triangle() -> Vec<Vertex> {
+fn triangle(angle_degrees: f32) -> Vec<Vertex> {
     let top_vert = glam::Vec2::new(0.0, 0.5);
     vec![
         Vertex {
-            position: top_vert,
+            position: rotate_cc(0.0 + angle_degrees * 90.0) * top_vert,
             color: glam::Vec3::new(1.0, 0.0, 0.0),
         },
         Vertex {
-            position: rotate_cc(120.0) * top_vert,
+            position: rotate_cc(120.0 + angle_degrees * 90.0) * top_vert,
             color: glam::Vec3::new(0.0, 1.0, 0.0),
         },
         Vertex {
-            position: rotate_cc(240.0) * top_vert,
+            position: rotate_cc(240.0 + angle_degrees * 90.0) * top_vert,
             color: glam::Vec3::new(0.0, 0.0, 1.0),
         },
     ]
@@ -105,7 +105,6 @@ struct Game {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    vertex_buffer: wgpu::Buffer,
     square_vertex_buffer: wgpu::Buffer,
     low_res_render_pipeline: wgpu::RenderPipeline,
     low_res_texture_view: wgpu::TextureView,
@@ -127,19 +126,6 @@ impl Game {
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .block_on()
             .unwrap();
-        let triangle_vertices = triangle();
-        let triangle_vertice_bytes: &[u8] = bytemuck::cast_slice(triangle_vertices.as_slice());
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("vertex buffer"),
-            size: triangle_vertice_bytes.len() as u64,
-            usage: wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: true,
-        });
-        vertex_buffer
-            .slice(..)
-            .get_mapped_range_mut()
-            .copy_from_slice(triangle_vertice_bytes);
-        vertex_buffer.unmap();
         let square_verts = square();
         let square_vert_bytes: &[u8] = bytemuck::cast_slice(square_verts.as_slice());
         let square_vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -185,8 +171,8 @@ impl Game {
         let low_res_texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("low res texture"),
             size: wgpu::Extent3d {
-                width: 20,
-                height: 20,
+                width: 100,
+                height: 100,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -258,7 +244,6 @@ impl Game {
             surface,
             device,
             queue,
-            vertex_buffer,
             square_vertex_buffer,
             low_res_render_pipeline,
             low_res_texture_view,
@@ -278,7 +263,7 @@ impl Game {
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
                 width: window_inner_size.width,
                 height: window_inner_size.height,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                present_mode: wgpu::PresentMode::AutoNoVsync,
                 // The window surface does not support alpha
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
@@ -286,9 +271,22 @@ impl Game {
         );
     }
 
-    fn render(&self) {
+    fn render(&self, t: std::time::Duration) {
         // TODO: Log all these things we're creating
         // TODO: Especially log the default instances so we can review their settings
+        let triangle_vertices = triangle(t.as_secs_f32());
+        let triangle_vertice_bytes: &[u8] = bytemuck::cast_slice(triangle_vertices.as_slice());
+        let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("vertex buffer"),
+            size: triangle_vertice_bytes.len() as u64,
+            usage: wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: true,
+        });
+        vertex_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(triangle_vertice_bytes);
+        vertex_buffer.unmap();
         let mut command_encoder: wgpu::CommandEncoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -317,7 +315,7 @@ impl Game {
                     depth_stencil_attachment: None,
                 });
             low_res_render_pass.set_pipeline(&self.low_res_render_pipeline);
-            low_res_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            low_res_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             low_res_render_pass.draw(0..3, 0..1);
         }
         {
@@ -357,46 +355,58 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new();
     let window: winit::window::Window = winit::window::Window::new(&event_loop).unwrap();
     let game = Game::new(window);
-    event_loop.run(move |event, _, control_flow| match event {
-        winit::event::Event::WindowEvent {
-            window_id: _,
-            event: window_event,
-        } => match window_event {
-            winit::event::WindowEvent::CloseRequested => {
-                control_flow.set_exit();
-            }
-            winit::event::WindowEvent::KeyboardInput {
+    let mut rendered_frames = 0;
+    let start_time = std::time::Instant::now();
+    event_loop.run(move |event, _, control_flow| {
+        let time_since_start: std::time::Duration = std::time::Instant::now() - start_time;
+        match event {
+            winit::event::Event::WindowEvent {
+                window_id: _,
+                event: window_event,
+            } => match window_event {
+                winit::event::WindowEvent::CloseRequested => {
+                    control_flow.set_exit();
+                }
+                winit::event::WindowEvent::KeyboardInput {
+                    device_id: _,
+                    input:
+                        winit::event::KeyboardInput {
+                            scancode: _,
+                            state: _,
+                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
+                            ..
+                        },
+                    is_synthetic: _,
+                } => {
+                    control_flow.set_exit();
+                }
+                winit::event::WindowEvent::Resized(_) => {
+                    game.configure_surface();
+                }
+                _ => {}
+            },
+            winit::event::Event::DeviceEvent {
                 device_id: _,
-                input:
-                    winit::event::KeyboardInput {
-                        scancode: _,
-                        state: _,
-                        virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
-                        ..
-                    },
-                is_synthetic: _,
+                event: _device_event,
             } => {
-                control_flow.set_exit();
+                // TODO: Handle button presses
+                // TODO: Track button states
             }
-            winit::event::WindowEvent::Resized(_) => {
-                game.configure_surface();
+            winit::event::Event::MainEventsCleared => {
+                // The winit docs say:
+                // Programs that draw graphics continuously, like most games,
+                // can render here unconditionally for simplicity.
+                // See: https://docs.rs/winit/latest/winit/event/enum.Event.html#variant.MainEventsCleared
+                game.render(time_since_start);
+                rendered_frames += 1;
+                if rendered_frames % 100 == 0 {
+                    println!(
+                        "FPS: {:.0}",
+                        rendered_frames as f32 / time_since_start.as_secs_f32()
+                    );
+                }
             }
             _ => {}
-        },
-        winit::event::Event::DeviceEvent {
-            device_id: _,
-            event: _device_event,
-        } => {
-            // TODO: Handle button presses
-            // TODO: Track button states
         }
-        winit::event::Event::MainEventsCleared => {
-            // The winit docs say:
-            // Programs that draw graphics continuously, like most games,
-            // can render here unconditionally for simplicity.
-            // See: https://docs.rs/winit/latest/winit/event/enum.Event.html#variant.MainEventsCleared
-            game.render();
-        }
-        _ => {}
     });
 }
