@@ -6,6 +6,8 @@
 // TODO: Clear window with a color
 // TODO: I will need to track keystate myself, possible with a set
 // TODO: Simulate a lower resolution
+// TODO: Create a way to draw PNGs at given coordinates
+// TODO: Setup a good logging system, write some logs
 use pollster::FutureExt as _;
 
 #[repr(C)]
