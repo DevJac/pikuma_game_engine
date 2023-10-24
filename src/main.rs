@@ -97,6 +97,18 @@ fn triangle(angle_degrees: f32) -> Vec<Vertex> {
             position: rotate_cc(240.0 + angle_degrees * 90.0) * top_vert,
             color: glam::Vec3::new(0.0, 0.0, 1.0),
         },
+        Vertex {
+            position: rotate_cc(0.0 + angle_degrees * 60.0) * top_vert * 0.8,
+            color: glam::Vec3::new(1.0, 1.0, 1.0),
+        },
+        Vertex {
+            position: rotate_cc(120.0 + angle_degrees * 60.0) * top_vert * 0.8,
+            color: glam::Vec3::new(1.0, 1.0, 1.0),
+        },
+        Vertex {
+            position: rotate_cc(240.0 + angle_degrees * 60.0) * top_vert * 0.8,
+            color: glam::Vec3::new(1.0, 1.0, 1.0),
+        },
     ]
 }
 
@@ -340,7 +352,7 @@ impl Game {
                 });
             low_res_render_pass.set_pipeline(&self.low_res_render_pipeline);
             low_res_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            low_res_render_pass.draw(0..3, 0..1);
+            low_res_render_pass.draw(0..6, 0..1);
         }
         {
             let mut surface_render_pass: wgpu::RenderPass =
