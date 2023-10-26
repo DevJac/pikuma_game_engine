@@ -8,6 +8,7 @@
 // TODO: Simulate a lower resolution
 // TODO: Create a way to draw PNGs at given coordinates
 // TODO: Setup a good logging system, write some logs
+// TODO: Load an image and show it on the screen
 use pollster::FutureExt as _;
 
 #[repr(C)]
@@ -85,7 +86,7 @@ const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
 // TODO: Make a square function that returns a unit square of TextureVertex
 
 fn triangle(angle_degrees: f32) -> Vec<Vertex> {
-    let top_vert = glam::Vec2::new(0.0, 0.5);
+    let top_vert = glam::Vec2::new(0.0, 1.5);
     vec![
         Vertex {
             position: rotate_cc(0.0 + angle_degrees * 90.0) * top_vert,
@@ -125,6 +126,7 @@ struct Game {
     low_res_texture_resolved_view: wgpu::TextureView,
     surface_render_pipeline: wgpu::RenderPipeline,
     surface_render_bind_group: wgpu::BindGroup,
+    image: wgpu::Texture,
 }
 
 impl Game {
@@ -199,7 +201,7 @@ impl Game {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[wgpu::TextureFormat::Bgra8UnormSrgb],
+            view_formats: &[],
         });
         let low_res_texture_resolved: wgpu::Texture =
             device.create_texture(&wgpu::TextureDescriptor {
@@ -215,7 +217,7 @@ impl Game {
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[wgpu::TextureFormat::Bgra8UnormSrgb],
+                view_formats: &[],
             });
         let surface_render_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -238,7 +240,7 @@ impl Game {
                     entry_point: "texture_to_texture_fragment_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                        blend: None,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -276,6 +278,43 @@ impl Game {
                 },
             ],
         });
+        let dynamic_image: image::DynamicImage = image::io::Reader::open("assets/images/tree.png")
+            .unwrap()
+            .decode()
+            .unwrap();
+        let image = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("image"),
+            size: wgpu::Extent3d {
+                width: dynamic_image.width(),
+                height: dynamic_image.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &image,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            dynamic_image.as_bytes(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(dynamic_image.width() * 4),
+                rows_per_image: Some(dynamic_image.height()),
+            },
+            wgpu::Extent3d {
+                width: dynamic_image.width(),
+                height: dynamic_image.height(),
+                depth_or_array_layers: 1,
+            },
+        );
         let game = Game {
             window,
             surface,
@@ -287,6 +326,7 @@ impl Game {
             low_res_texture_resolved_view,
             surface_render_pipeline,
             surface_render_bind_group,
+            image,
         };
         game.configure_surface();
         game
@@ -304,7 +344,7 @@ impl Game {
                 present_mode: wgpu::PresentMode::AutoNoVsync,
                 // The window surface does not support alpha
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
+                view_formats: vec![],
             },
         );
     }
@@ -355,6 +395,80 @@ impl Game {
             low_res_render_pass.set_pipeline(&self.low_res_render_pipeline);
             low_res_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             low_res_render_pass.draw(0..6, 0..1);
+        }
+        {
+            // ==================================
+            // TODO before commit: Finish rendering image texture
+            let affine_transform = glam::Affine2::from_cols_array(&[0.5, 0.0, 0.0, 0.5, -0.5, 0.5]);
+            let square_verts: Vec<TextureVertex> = square()
+                .iter()
+                .map(|tv| TextureVertex {
+                    position: affine_transform.transform_point2(tv.position),
+                    uv: tv.uv,
+                })
+                .collect();
+            let square_vert_bytes: &[u8] = bytemuck::cast_slice(square_verts.as_slice());
+            let square_vertex_buffer: wgpu::Buffer =
+                self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("square buffer"),
+                    size: square_vert_bytes.len() as u64,
+                    usage: wgpu::BufferUsages::VERTEX,
+                    mapped_at_creation: true,
+                });
+            square_vertex_buffer
+                .slice(..)
+                .get_mapped_range_mut()
+                .copy_from_slice(square_vert_bytes);
+            square_vertex_buffer.unmap();
+            let image_view = self
+                .image
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let image_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("image sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 0.0,
+                compare: None,
+                anisotropy_clamp: 1,
+                border_color: None,
+            });
+            let image_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("image bind group"),
+                layout: &self.surface_render_pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&image_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&image_sampler),
+                    },
+                ],
+            });
+            let mut image_render_pass: wgpu::RenderPass =
+                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("image render pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.low_res_texture_resolved_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
+            image_render_pass.set_pipeline(&self.surface_render_pipeline);
+            image_render_pass.set_bind_group(0, &image_bind_group, &[]);
+            image_render_pass.set_vertex_buffer(0, square_vertex_buffer.slice(..));
+            image_render_pass.draw(0..6, 0..1);
+            // =======================================
         }
         {
             let mut surface_render_pass: wgpu::RenderPass =
