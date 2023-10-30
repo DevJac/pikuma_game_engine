@@ -387,18 +387,18 @@ impl Game {
                                 // We're rendering to a window surface which ignores alpha
                                 a: 1.0,
                             }),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                 });
             low_res_render_pass.set_pipeline(&self.low_res_render_pipeline);
             low_res_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             low_res_render_pass.draw(0..6, 0..1);
         }
         {
-            // ==================================
-            // TODO before commit: Finish rendering image texture
             let affine_transform = glam::Affine2::from_cols_array(&[0.5, 0.0, 0.0, 0.5, -0.5, 0.5]);
             let square_verts: Vec<TextureVertex> = square()
                 .iter()
@@ -459,16 +459,17 @@ impl Game {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                 });
             image_render_pass.set_pipeline(&self.surface_render_pipeline);
             image_render_pass.set_bind_group(0, &image_bind_group, &[]);
             image_render_pass.set_vertex_buffer(0, square_vertex_buffer.slice(..));
             image_render_pass.draw(0..6, 0..1);
-            // =======================================
         }
         {
             let mut surface_render_pass: wgpu::RenderPass =
@@ -485,10 +486,12 @@ impl Game {
                                 // We're rendering to a window surface which ignores alpha
                                 a: 1.0,
                             }),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                 });
             surface_render_pass.set_pipeline(&self.surface_render_pipeline);
             surface_render_pass.set_bind_group(0, &self.surface_render_bind_group, &[]);
@@ -496,6 +499,7 @@ impl Game {
             surface_render_pass.draw(0..6, 0..1);
         }
         self.queue.submit([command_encoder.finish()]);
+        self.window.pre_present_notify();
         surface_texture.present();
     }
 }
@@ -504,7 +508,7 @@ fn main() {
     // TODO: Process input
     // TODO: Update game state
     // TODO: Render
-    let event_loop = winit::event_loop::EventLoop::new();
+    let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window: winit::window::Window = winit::window::Window::new(&event_loop).unwrap();
     let game = Game::new(window);
     let start_time = std::time::Instant::now();
@@ -512,58 +516,69 @@ fn main() {
     // Render time exponential moving average in seconds
     let mut render_time_ema_seconds: f32 = 0.0;
     let mut rendered_frames: u64 = 0;
-    event_loop.run(move |event, _, control_flow| {
-        let time_since_start: std::time::Duration = std::time::Instant::now() - start_time;
-        match event {
-            winit::event::Event::WindowEvent {
-                window_id: _,
-                event: window_event,
-            } => match window_event {
-                winit::event::WindowEvent::CloseRequested => {
-                    control_flow.set_exit();
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    event_loop
+        .run(move |event, window_target| {
+            let time_since_start: std::time::Duration = std::time::Instant::now() - start_time;
+            match event {
+                winit::event::Event::NewEvents(_) => {
+                    game.window.request_redraw();
                 }
-                winit::event::WindowEvent::KeyboardInput {
+                winit::event::Event::WindowEvent {
+                    window_id: _,
+                    event: window_event,
+                } => match window_event {
+                    winit::event::WindowEvent::CloseRequested => {
+                        window_target.exit();
+                    }
+                    winit::event::WindowEvent::KeyboardInput {
+                        device_id: _,
+                        event:
+                            winit::event::KeyEvent {
+                                physical_key: _,
+                                logical_key:
+                                    winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape),
+                                text: _,
+                                location: _,
+                                state: _,
+                                repeat: _,
+                                ..
+                            },
+                        is_synthetic: _,
+                    } => {
+                        window_target.exit();
+                    }
+                    winit::event::WindowEvent::Resized(_) => {
+                        game.configure_surface();
+                    }
+                    winit::event::WindowEvent::RedrawRequested => {
+                        // TODO: This comment is outdated in latest winit version, update comment:
+                        // The winit docs say:
+                        // Programs that draw graphics continuously, like most games,
+                        // can render here unconditionally for simplicity.
+                        // See: https://docs.rs/winit/latest/winit/event/enum.Event.html#variant.MainEventsCleared
+                        game.render(time_since_start);
+                        let now = std::time::Instant::now();
+                        let render_time_seconds: f32 = (now - last_render_time).as_secs_f32();
+                        render_time_ema_seconds *= 0.99;
+                        render_time_ema_seconds += 0.01 * render_time_seconds;
+                        last_render_time = now;
+                        rendered_frames += 1;
+                        if rendered_frames % 100 == 0 {
+                            println!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
+                        }
+                    }
+                    _ => {}
+                },
+                winit::event::Event::DeviceEvent {
                     device_id: _,
-                    input:
-                        winit::event::KeyboardInput {
-                            scancode: _,
-                            state: _,
-                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
-                            ..
-                        },
-                    is_synthetic: _,
+                    event: _device_event,
                 } => {
-                    control_flow.set_exit();
-                }
-                winit::event::WindowEvent::Resized(_) => {
-                    game.configure_surface();
+                    // TODO: Handle button presses
+                    // TODO: Track button states
                 }
                 _ => {}
-            },
-            winit::event::Event::DeviceEvent {
-                device_id: _,
-                event: _device_event,
-            } => {
-                // TODO: Handle button presses
-                // TODO: Track button states
             }
-            winit::event::Event::MainEventsCleared => {
-                // The winit docs say:
-                // Programs that draw graphics continuously, like most games,
-                // can render here unconditionally for simplicity.
-                // See: https://docs.rs/winit/latest/winit/event/enum.Event.html#variant.MainEventsCleared
-                game.render(time_since_start);
-                let now = std::time::Instant::now();
-                let render_time_seconds: f32 = (now - last_render_time).as_secs_f32();
-                render_time_ema_seconds *= 0.99;
-                render_time_ema_seconds += 0.01 * render_time_seconds;
-                last_render_time = now;
-                rendered_frames += 1;
-                if rendered_frames % 100 == 0 {
-                    println!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
-                }
-            }
-            _ => {}
-        }
-    });
+        })
+        .unwrap();
 }
