@@ -512,6 +512,7 @@ fn main() {
     // TODO: Process input
     // TODO: Update game state
     // TODO: Render
+    env_logger::init();
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window: winit::window::Window = winit::window::Window::new(&event_loop).unwrap();
     let game = Game::new(window, 80, 60);
@@ -570,7 +571,7 @@ fn main() {
                     last_render_time = now;
                     rendered_frames += 1;
                     if rendered_frames % 100 == 0 {
-                        println!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
+                        log::info!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
                     }
                 }
                 _ => {}
