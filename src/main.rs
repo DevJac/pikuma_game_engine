@@ -518,18 +518,15 @@ fn main() {
     let mut rendered_frames: u64 = 0;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     event_loop
-        .run(move |event, window_target| {
+        .run(move |event, event_loop_window_target| {
             let time_since_start: std::time::Duration = std::time::Instant::now() - start_time;
             match event {
-                winit::event::Event::NewEvents(_) => {
-                    game.window.request_redraw();
-                }
                 winit::event::Event::WindowEvent {
                     window_id: _,
                     event: window_event,
                 } => match window_event {
                     winit::event::WindowEvent::CloseRequested => {
-                        window_target.exit();
+                        event_loop_window_target.exit();
                     }
                     winit::event::WindowEvent::KeyboardInput {
                         device_id: _,
@@ -546,27 +543,10 @@ fn main() {
                             },
                         is_synthetic: _,
                     } => {
-                        window_target.exit();
+                        event_loop_window_target.exit();
                     }
                     winit::event::WindowEvent::Resized(_) => {
                         game.configure_surface();
-                    }
-                    winit::event::WindowEvent::RedrawRequested => {
-                        // TODO: This comment is outdated in latest winit version, update comment:
-                        // The winit docs say:
-                        // Programs that draw graphics continuously, like most games,
-                        // can render here unconditionally for simplicity.
-                        // See: https://docs.rs/winit/latest/winit/event/enum.Event.html#variant.MainEventsCleared
-                        game.render(time_since_start);
-                        let now = std::time::Instant::now();
-                        let render_time_seconds: f32 = (now - last_render_time).as_secs_f32();
-                        render_time_ema_seconds *= 0.99;
-                        render_time_ema_seconds += 0.01 * render_time_seconds;
-                        last_render_time = now;
-                        rendered_frames += 1;
-                        if rendered_frames % 100 == 0 {
-                            println!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
-                        }
                     }
                     _ => {}
                 },
@@ -576,6 +556,18 @@ fn main() {
                 } => {
                     // TODO: Handle button presses
                     // TODO: Track button states
+                }
+                winit::event::Event::AboutToWait => {
+                    game.render(time_since_start);
+                    let now = std::time::Instant::now();
+                    let render_time_seconds: f32 = (now - last_render_time).as_secs_f32();
+                    render_time_ema_seconds *= 0.99;
+                    render_time_ema_seconds += 0.01 * render_time_seconds;
+                    last_render_time = now;
+                    rendered_frames += 1;
+                    if rendered_frames % 100 == 0 {
+                        println!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
+                    }
                 }
                 _ => {}
             }
