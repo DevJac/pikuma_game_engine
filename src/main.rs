@@ -518,6 +518,7 @@ fn main() {
     let game = Game::new(window, 80, 60);
     let start_time = std::time::Instant::now();
     let mut last_render_time = start_time;
+    // TODO: Extract these stat tracking variables into a utility object
     // Render time exponential moving average in seconds
     let mut render_time_ema_seconds: f32 = 0.0;
     let mut rendered_frames: u64 = 0;
