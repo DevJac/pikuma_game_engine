@@ -117,6 +117,8 @@ fn triangle(angle_degrees: f32) -> Vec<Vertex> {
 
 struct Game {
     window: winit::window::Window,
+    width: u32,
+    height: u32,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -130,7 +132,7 @@ struct Game {
 }
 
 impl Game {
-    fn new(window: winit::window::Window) -> Self {
+    fn new(window: winit::window::Window, width: u32, height: u32) -> Self {
         // TODO: Log all these things we're creating
         // TODO: Especially log the default instances so we can review their settings
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
@@ -192,8 +194,8 @@ impl Game {
         let low_res_texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("low res texture"),
             size: wgpu::Extent3d {
-                width: 100,
-                height: 100,
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -207,8 +209,8 @@ impl Game {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("low res texture resolved"),
                 size: wgpu::Extent3d {
-                    width: 100,
-                    height: 100,
+                    width,
+                    height,
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
@@ -317,6 +319,8 @@ impl Game {
         );
         let game = Game {
             window,
+            width,
+            height,
             surface,
             device,
             queue,
@@ -510,7 +514,7 @@ fn main() {
     // TODO: Render
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window: winit::window::Window = winit::window::Window::new(&event_loop).unwrap();
-    let game = Game::new(window);
+    let game = Game::new(window, 80, 60);
     let start_time = std::time::Instant::now();
     let mut last_render_time = start_time;
     // Render time exponential moving average in seconds
