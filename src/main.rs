@@ -508,6 +508,44 @@ impl Game {
     }
 }
 
+struct FPSStats {
+    /// The half life (in seconds) of samples
+    half_life: f32,
+    /// mean
+    mean: f32,
+    /// variance
+    variance: f32,
+}
+
+impl FPSStats {
+    fn new(half_life: f32) -> Self {
+        Self {
+            half_life,
+            mean: 1.0 / 60.0,
+            variance: 0.0,
+        }
+    }
+
+    fn update(&mut self, frame_time: f32) {
+        let alpha: f32 = 2.0_f32.powf(-frame_time / self.half_life);
+        self.mean = alpha * self.mean + (1.0 - alpha) * frame_time;
+        self.variance = alpha * self.variance + (1.0 - alpha) * (self.mean - frame_time).powi(2);
+    }
+
+    fn mean(&self) -> f32 {
+        self.mean
+    }
+
+    fn variance(&self) -> f32 {
+        self.variance
+    }
+
+    /// Standard deviation
+    fn std(&self) -> f32 {
+        self.variance.sqrt()
+    }
+}
+
 fn main() {
     // TODO: Process input
     // TODO: Update game state
@@ -518,10 +556,8 @@ fn main() {
     let game = Game::new(window, 80, 60);
     let start_time = std::time::Instant::now();
     let mut last_render_time = start_time;
-    // TODO: Extract these stat tracking variables into a utility object
-    // Render time exponential moving average in seconds
-    let mut render_time_ema_seconds: f32 = 0.0;
-    let mut rendered_frames: u64 = 0;
+    let mut last_fps_log_time = start_time;
+    let mut render_time_stats = FPSStats::new(1.0);
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     event_loop
         .run(move |event, event_loop_window_target| {
@@ -567,12 +603,13 @@ fn main() {
                     game.render(time_since_start);
                     let now = std::time::Instant::now();
                     let render_time_seconds: f32 = (now - last_render_time).as_secs_f32();
-                    render_time_ema_seconds *= 0.99;
-                    render_time_ema_seconds += 0.01 * render_time_seconds;
+                    render_time_stats.update(render_time_seconds);
                     last_render_time = now;
-                    rendered_frames += 1;
-                    if rendered_frames % 100 == 0 {
-                        log::info!("FPS: {:.0}", 1.0 / render_time_ema_seconds);
+                    if now - last_fps_log_time > std::time::Duration::from_secs(10) {
+                        last_fps_log_time = now;
+                        let fps = 1.0 / render_time_stats.mean();
+                        let fps_std = render_time_stats.std() / render_time_stats.mean().powi(2);
+                        log::info!("FPS: {:.0} ± {:.0}", fps, fps_std);
                     }
                 }
                 _ => {}
