@@ -9,6 +9,7 @@
 // TODO: Create a way to draw PNGs at given coordinates
 // TODO: Setup a good logging system, write some logs
 // TODO: Load an image and show it on the screen
+// TODO: Come up with something better than unwrap-based error handling
 use pollster::FutureExt as _;
 
 #[repr(C)]
@@ -122,201 +123,208 @@ struct Game {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    square_vertex_buffer: wgpu::Buffer,
-    low_res_render_pipeline: wgpu::RenderPipeline,
-    low_res_texture_view: wgpu::TextureView,
-    low_res_texture_resolved_view: wgpu::TextureView,
-    surface_render_pipeline: wgpu::RenderPipeline,
-    surface_render_bind_group: wgpu::BindGroup,
-    image: wgpu::Texture,
+    // square_vertex_buffer: wgpu::Buffer,
+    // low_res_render_pipeline: wgpu::RenderPipeline,
+    // low_res_texture_view: wgpu::TextureView,
+    // low_res_texture_resolved_view: wgpu::TextureView,
+    // surface_render_pipeline: wgpu::RenderPipeline,
+    // surface_render_bind_group: wgpu::BindGroup,
+    // image: wgpu::Texture,
 }
 
 impl Game {
     fn new(window: winit::window::Window, width: u32, height: u32) -> Self {
         // TODO: Log all these things we're creating
         // TODO: Especially log the default instances so we can review their settings
-        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+        let instance_descriptor = wgpu::InstanceDescriptor::default();
+        log::debug!("Creating default Instance: {:?}", &instance_descriptor);
+        let instance: wgpu::Instance = wgpu::Instance::new(instance_descriptor);
+        log::debug!("Creating Surface");
         let surface: wgpu::Surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let request_adapter_options = wgpu::RequestAdapterOptions::default();
+        log::debug!("Creating default Adapter: {:?}", &request_adapter_options);
         let adapter: wgpu::Adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .request_adapter(&request_adapter_options)
             .block_on()
             .unwrap();
+        let device_descriptor = wgpu::DeviceDescriptor::default();
+        log::debug!("Creating default Device: {:?}", &device_descriptor);
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .request_device(&device_descriptor, None)
             .block_on()
             .unwrap();
-        let square_verts = square();
-        let square_vert_bytes: &[u8] = bytemuck::cast_slice(square_verts.as_slice());
-        let square_vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("square buffer"),
-            size: square_vert_bytes.len() as u64,
-            usage: wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: true,
-        });
-        square_vertex_buffer
-            .slice(..)
-            .get_mapped_range_mut()
-            .copy_from_slice(square_vert_bytes);
-        square_vertex_buffer.unmap();
-        let shader_module: wgpu::ShaderModule =
-            device.create_shader_module(wgpu::include_wgsl!("shaders/main.wgsl"));
-        let low_res_render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("render pipeline"),
-                layout: None,
-                vertex: wgpu::VertexState {
-                    module: &shader_module,
-                    entry_point: "vertex_main",
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: VERTEX_ATTRIBUTES,
-                    }],
-                },
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState {
-                    count: 4,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader_module,
-                    entry_point: "fragment_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                multiview: None,
-            });
-        let low_res_texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("low res texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 4,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let low_res_texture_resolved: wgpu::Texture =
-            device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("low res texture resolved"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-        let surface_render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("surface render pipeline"),
-                layout: None,
-                vertex: wgpu::VertexState {
-                    module: &shader_module,
-                    entry_point: "texture_to_texture_vertex_main",
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<TextureVertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: TEXTURE_VERTEX_ATTRIBUTES,
-                    }],
-                },
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader_module,
-                    entry_point: "texture_to_texture_fragment_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                multiview: None,
-            });
-        let surface_render_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("low res sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 0.0,
-            compare: None,
-            anisotropy_clamp: 1,
-            border_color: None,
-        });
-        let low_res_texture_view =
-            low_res_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let low_res_texture_resolved_view =
-            low_res_texture_resolved.create_view(&wgpu::TextureViewDescriptor::default());
-        let surface_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("surface render bind group"),
-            layout: &surface_render_pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&low_res_texture_resolved_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&surface_render_sampler),
-                },
-            ],
-        });
-        let dynamic_image: image::DynamicImage = image::io::Reader::open("assets/images/tree.png")
-            .unwrap()
-            .decode()
-            .unwrap();
-        let image = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("image"),
-            size: wgpu::Extent3d {
-                width: dynamic_image.width(),
-                height: dynamic_image.height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &image,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            dynamic_image.as_bytes(),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(dynamic_image.width() * 4),
-                rows_per_image: Some(dynamic_image.height()),
-            },
-            wgpu::Extent3d {
-                width: dynamic_image.width(),
-                height: dynamic_image.height(),
-                depth_or_array_layers: 1,
-            },
-        );
+        // let square_verts = square();
+        // let square_vert_bytes: &[u8] = bytemuck::cast_slice(square_verts.as_slice());
+        // let square_vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        //     label: Some("square buffer"),
+        //     size: square_vert_bytes.len() as u64,
+        //     usage: wgpu::BufferUsages::VERTEX,
+        //     mapped_at_creation: true,
+        // });
+        // square_vertex_buffer
+        //     .slice(..)
+        //     .get_mapped_range_mut()
+        //     .copy_from_slice(square_vert_bytes);
+        // square_vertex_buffer.unmap();
+        // let shader_module: wgpu::ShaderModule =
+        //     device.create_shader_module(wgpu::include_wgsl!("shaders/main.wgsl"));
+        // let low_res_render_pipeline =
+        //     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        //         label: Some("render pipeline"),
+        //         layout: None,
+        //         vertex: wgpu::VertexState {
+        //             module: &shader_module,
+        //             entry_point: "vertex_main",
+        //             buffers: &[wgpu::VertexBufferLayout {
+        //                 array_stride: std::mem::size_of::<Vertex>() as u64,
+        //                 step_mode: wgpu::VertexStepMode::Vertex,
+        //                 attributes: VERTEX_ATTRIBUTES,
+        //             }],
+        //         },
+        //         primitive: wgpu::PrimitiveState::default(),
+        //         depth_stencil: None,
+        //         multisample: wgpu::MultisampleState {
+        //             count: 4,
+        //             mask: !0,
+        //             alpha_to_coverage_enabled: false,
+        //         },
+        //         fragment: Some(wgpu::FragmentState {
+        //             module: &shader_module,
+        //             entry_point: "fragment_main",
+        //             targets: &[Some(wgpu::ColorTargetState {
+        //                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        //                 blend: None,
+        //                 write_mask: wgpu::ColorWrites::ALL,
+        //             })],
+        //         }),
+        //         multiview: None,
+        //     });
+        // let low_res_texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+        //     label: Some("low res texture"),
+        //     size: wgpu::Extent3d {
+        //         width,
+        //         height,
+        //         depth_or_array_layers: 1,
+        //     },
+        //     mip_level_count: 1,
+        //     sample_count: 4,
+        //     dimension: wgpu::TextureDimension::D2,
+        //     format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        //     usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        //     view_formats: &[],
+        // });
+        // let low_res_texture_resolved: wgpu::Texture =
+        //     device.create_texture(&wgpu::TextureDescriptor {
+        //         label: Some("low res texture resolved"),
+        //         size: wgpu::Extent3d {
+        //             width,
+        //             height,
+        //             depth_or_array_layers: 1,
+        //         },
+        //         mip_level_count: 1,
+        //         sample_count: 1,
+        //         dimension: wgpu::TextureDimension::D2,
+        //         format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        //         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+        //             | wgpu::TextureUsages::TEXTURE_BINDING,
+        //         view_formats: &[],
+        //     });
+        // let surface_render_pipeline =
+        //     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        //         label: Some("surface render pipeline"),
+        //         layout: None,
+        //         vertex: wgpu::VertexState {
+        //             module: &shader_module,
+        //             entry_point: "texture_to_texture_vertex_main",
+        //             buffers: &[wgpu::VertexBufferLayout {
+        //                 array_stride: std::mem::size_of::<TextureVertex>() as u64,
+        //                 step_mode: wgpu::VertexStepMode::Vertex,
+        //                 attributes: TEXTURE_VERTEX_ATTRIBUTES,
+        //             }],
+        //         },
+        //         primitive: wgpu::PrimitiveState::default(),
+        //         depth_stencil: None,
+        //         multisample: wgpu::MultisampleState::default(),
+        //         fragment: Some(wgpu::FragmentState {
+        //             module: &shader_module,
+        //             entry_point: "texture_to_texture_fragment_main",
+        //             targets: &[Some(wgpu::ColorTargetState {
+        //                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        //                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+        //                 write_mask: wgpu::ColorWrites::ALL,
+        //             })],
+        //         }),
+        //         multiview: None,
+        //     });
+        // let surface_render_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        //     label: Some("low res sampler"),
+        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_w: wgpu::AddressMode::ClampToEdge,
+        //     mag_filter: wgpu::FilterMode::Nearest,
+        //     min_filter: wgpu::FilterMode::Nearest,
+        //     mipmap_filter: wgpu::FilterMode::Nearest,
+        //     lod_min_clamp: 0.0,
+        //     lod_max_clamp: 0.0,
+        //     compare: None,
+        //     anisotropy_clamp: 1,
+        //     border_color: None,
+        // });
+        // let low_res_texture_view =
+        //     low_res_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // let low_res_texture_resolved_view =
+        //     low_res_texture_resolved.create_view(&wgpu::TextureViewDescriptor::default());
+        // let surface_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     label: Some("surface render bind group"),
+        //     layout: &surface_render_pipeline.get_bind_group_layout(0),
+        //     entries: &[
+        //         wgpu::BindGroupEntry {
+        //             binding: 0,
+        //             resource: wgpu::BindingResource::TextureView(&low_res_texture_resolved_view),
+        //         },
+        //         wgpu::BindGroupEntry {
+        //             binding: 1,
+        //             resource: wgpu::BindingResource::Sampler(&surface_render_sampler),
+        //         },
+        //     ],
+        // });
+        // let dynamic_image: image::DynamicImage = image::io::Reader::open("assets/images/tree.png")
+        //     .unwrap()
+        //     .decode()
+        //     .unwrap();
+        // let image = device.create_texture(&wgpu::TextureDescriptor {
+        //     label: Some("image"),
+        //     size: wgpu::Extent3d {
+        //         width: dynamic_image.width(),
+        //         height: dynamic_image.height(),
+        //         depth_or_array_layers: 1,
+        //     },
+        //     mip_level_count: 1,
+        //     sample_count: 1,
+        //     dimension: wgpu::TextureDimension::D2,
+        //     format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        //     usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+        //     view_formats: &[],
+        // });
+        // queue.write_texture(
+        //     wgpu::ImageCopyTexture {
+        //         texture: &image,
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     dynamic_image.as_bytes(),
+        //     wgpu::ImageDataLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(dynamic_image.width() * 4),
+        //         rows_per_image: Some(dynamic_image.height()),
+        //     },
+        //     wgpu::Extent3d {
+        //         width: dynamic_image.width(),
+        //         height: dynamic_image.height(),
+        //         depth_or_array_layers: 1,
+        //     },
+        // );
         let game = Game {
             window,
             width,
@@ -324,15 +332,8 @@ impl Game {
             surface,
             device,
             queue,
-            square_vertex_buffer,
-            low_res_render_pipeline,
-            low_res_texture_view,
-            low_res_texture_resolved_view,
-            surface_render_pipeline,
-            surface_render_bind_group,
-            image,
         };
-        game.configure_surface();
+        // game.configure_surface();
         game
     }
 
