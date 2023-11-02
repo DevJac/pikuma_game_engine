@@ -230,6 +230,27 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+        // TODO: Need pipeline
+        // TODO: This pipeline may move to new. We probably don't want to recreate it over and over.
+        let primative_state = wgpu::PrimitiveState::default();
+        let multisample_state = wgpu::MultisampleState::default();
+        log::debug!(
+            "Using RenderPipeline defaults:\n{:?}\n{:?}",
+            &primative_state,
+            &multisample_state
+        );
+        let low_res_pipeline: wgpu::RenderPipeline =
+            self.device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: todo!(),
+                    layout: None,
+                    vertex: todo!(),
+                    primitive: primative_state,
+                    depth_stencil: None,
+                    multisample: multisample_state,
+                    fragment: todo!(),
+                    multiview: None,
+                });
     }
 }
 
