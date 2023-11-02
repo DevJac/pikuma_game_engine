@@ -15,42 +15,51 @@ use pollster::FutureExt as _;
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 struct TextureVertex {
+    // @location(0) position: vec2f,
     position: glam::Vec2,
+    // @location(1) uv: vec2f,
     uv: glam::Vec2,
+    // @location(2) lower_right: vec3u,
+    lower_right: glam::UVec3,
 }
 
 const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x2,
+        format: wgpu::VertexFormat::Float32x2, // size = 4 * 2 = 8
         offset: 0,
         shader_location: 0,
     },
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x2,
-        offset: 4 * 2,
+        format: wgpu::VertexFormat::Float32x2, // size = 4 * 2 = 8
+        offset: 8,
         shader_location: 1,
+    },
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Uint32x3, // size = 4 * 3 = 12
+        offset: 16,
+        shader_location: 2,
     },
 ];
 
-fn square() -> Vec<TextureVertex> {
-    let v0 = TextureVertex {
-        position: glam::Vec2::new(-1.0, 1.0),
-        uv: glam::Vec2::new(0.0, 0.0),
-    };
-    let v1 = TextureVertex {
-        position: glam::Vec2::new(-1.0, -1.0),
-        uv: glam::Vec2::new(0.0, 1.0),
-    };
-    let v2 = TextureVertex {
-        position: glam::Vec2::new(1.0, -1.0),
-        uv: glam::Vec2::new(1.0, 1.0),
-    };
-    let v3 = TextureVertex {
-        position: glam::Vec2::new(1.0, 1.0),
-        uv: glam::Vec2::new(1.0, 0.0),
-    };
-    vec![v0, v1, v3, v3, v1, v2]
-}
+// fn square() -> Vec<TextureVertex> {
+//     let v0 = TextureVertex {
+//         position: glam::Vec2::new(-1.0, 1.0),
+//         uv: glam::Vec2::new(0.0, 0.0),
+//     };
+//     let v1 = TextureVertex {
+//         position: glam::Vec2::new(-1.0, -1.0),
+//         uv: glam::Vec2::new(0.0, 1.0),
+//     };
+//     let v2 = TextureVertex {
+//         position: glam::Vec2::new(1.0, -1.0),
+//         uv: glam::Vec2::new(1.0, 1.0),
+//     };
+//     let v3 = TextureVertex {
+//         position: glam::Vec2::new(1.0, 1.0),
+//         uv: glam::Vec2::new(1.0, 0.0),
+//     };
+//     vec![v0, v1, v3, v3, v1, v2]
+// }
 
 /// Counter-clockwise rotation matrix
 fn rotate_cc(angle_degrees: f32) -> glam::Mat2 {
@@ -126,6 +135,7 @@ struct Renderer {
     queue: wgpu::Queue,
     low_res_texture: wgpu::Texture,
     low_res_texture_view: wgpu::TextureView,
+    low_res_render_pipeline: wgpu::RenderPipeline,
 }
 
 impl Renderer {
@@ -171,6 +181,43 @@ impl Renderer {
             low_res_texture_view_descriptor
         );
         let low_res_texture_view = low_res_texture.create_view(&low_res_texture_view_descriptor);
+        let low_res_pipeline_module =
+            device.create_shader_module(wgpu::include_wgsl!("shaders/texture_quad.wgsl"));
+        let primative_state = wgpu::PrimitiveState::default();
+        let multisample_state = wgpu::MultisampleState::default();
+        log::debug!(
+            "Using RenderPipeline defaults:\n{:?}\n{:?}",
+            &primative_state,
+            &multisample_state
+        );
+        let low_res_render_pipeline: wgpu::RenderPipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("low_res_pipeline"),
+                layout: None,
+                vertex: wgpu::VertexState {
+                    module: &low_res_pipeline_module,
+                    entry_point: "vertex_main",
+                    // TODO: We should use instance buffers for repeated values
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<TextureVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: TEXTURE_VERTEX_ATTRIBUTES,
+                    }],
+                },
+                primitive: primative_state,
+                depth_stencil: None,
+                multisample: multisample_state,
+                fragment: Some(wgpu::FragmentState {
+                    module: &low_res_pipeline_module,
+                    entry_point: "fragment_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: preferred_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview: None,
+            });
         Self {
             window,
             width,
@@ -181,6 +228,7 @@ impl Renderer {
             queue,
             low_res_texture,
             low_res_texture_view,
+            low_res_render_pipeline,
         }
     }
 
@@ -230,27 +278,6 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-        // TODO: Need pipeline
-        // TODO: This pipeline may move to new. We probably don't want to recreate it over and over.
-        let primative_state = wgpu::PrimitiveState::default();
-        let multisample_state = wgpu::MultisampleState::default();
-        log::debug!(
-            "Using RenderPipeline defaults:\n{:?}\n{:?}",
-            &primative_state,
-            &multisample_state
-        );
-        let low_res_pipeline: wgpu::RenderPipeline =
-            self.device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: todo!(),
-                    layout: None,
-                    vertex: todo!(),
-                    primitive: primative_state,
-                    depth_stencil: None,
-                    multisample: multisample_state,
-                    fragment: todo!(),
-                    multiview: None,
-                });
     }
 }
 
