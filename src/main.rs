@@ -121,8 +121,11 @@ struct Renderer {
     width: u32,
     height: u32,
     surface: wgpu::Surface,
+    preferred_format: wgpu::TextureFormat,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    low_res_texture: wgpu::Texture,
+    low_res_texture_view: wgpu::TextureView,
 }
 
 impl Renderer {
@@ -139,19 +142,45 @@ impl Renderer {
             .request_adapter(&request_adapter_options)
             .block_on()
             .unwrap();
+        let preferred_format: wgpu::TextureFormat =
+            *surface.get_capabilities(&adapter).formats.get(0).unwrap();
+        log::debug!("Preferred format is: {:?}", &preferred_format);
         let device_descriptor = wgpu::DeviceDescriptor::default();
         log::debug!("Creating default Device: {:?}", &device_descriptor);
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&device_descriptor, None)
             .block_on()
             .unwrap();
+        let low_res_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Renderer::new low_res_texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: preferred_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let low_res_texture_view_descriptor = wgpu::TextureViewDescriptor::default();
+        log::debug!(
+            "Creating default low res texture view: {:?}",
+            low_res_texture_view_descriptor
+        );
+        let low_res_texture_view = low_res_texture.create_view(&low_res_texture_view_descriptor);
         Self {
             window,
             width,
             height,
             surface,
+            preferred_format,
             device,
             queue,
+            low_res_texture,
+            low_res_texture_view,
         }
     }
 
@@ -166,7 +195,7 @@ impl Renderer {
     }
 
     // TODO:
-    fn draw() {
+    fn draw(&self) {
         // TODO: Setup vertex buffer
         // We need to know the size of our vertex buffer before creating.
         // We will need to create a CPU data structure (vec based) to store the images
@@ -181,6 +210,26 @@ impl Renderer {
         // TODO: Surface render pass
         // Position a quad and draw the low res texture to the surface, then present the surface.
         // Keep aspect ratio of low res texture.
+        let mut command_encoder: wgpu::CommandEncoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Renderer::draw command_encoder"),
+                });
+        let low_res_render_pass: wgpu::RenderPass =
+            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Renderer::draw low_res_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.low_res_texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
     }
 }
 
