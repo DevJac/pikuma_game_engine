@@ -116,13 +116,75 @@ fn triangle(angle_degrees: f32) -> Vec<Vertex> {
     ]
 }
 
-struct Game {
+struct Renderer {
     window: winit::window::Window,
     width: u32,
     height: u32,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
+}
+
+impl Renderer {
+    // TODO:
+    fn new(window: winit::window::Window, width: u32, height: u32) -> Self {
+        let instance_descriptor = wgpu::InstanceDescriptor::default();
+        log::debug!("Creating default Instance: {:?}", &instance_descriptor);
+        let instance: wgpu::Instance = wgpu::Instance::new(instance_descriptor);
+        log::debug!("Creating Surface");
+        let surface: wgpu::Surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let request_adapter_options = wgpu::RequestAdapterOptions::default();
+        log::debug!("Creating default Adapter: {:?}", &request_adapter_options);
+        let adapter: wgpu::Adapter = instance
+            .request_adapter(&request_adapter_options)
+            .block_on()
+            .unwrap();
+        let device_descriptor = wgpu::DeviceDescriptor::default();
+        log::debug!("Creating default Device: {:?}", &device_descriptor);
+        let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
+            .request_device(&device_descriptor, None)
+            .block_on()
+            .unwrap();
+        Self {
+            window,
+            width,
+            height,
+            surface,
+            device,
+            queue,
+        }
+    }
+
+    // TODO:
+    fn draw_image() {
+        // TODO: Fill image vectors with images to be drawn.
+        // We need to keep a data structure in CPU memory of images we want to be drawn.
+        // Perhaps with multiple layers to control which images are drawn on top of others.
+
+        // TODO: How will we remove images from GPU memory when they are no longer used?
+        // We wont. We will keep all images in memory permanantly for now.
+    }
+
+    // TODO:
+    fn draw() {
+        // TODO: Setup vertex buffer
+        // We need to know the size of our vertex buffer before creating.
+        // We will need to create a CPU data structure (vec based) to store the images
+        // we want to draw, and then move them into a vertex buffer when it's time to render.
+
+        // TODO: Low res render pass
+        // Low res render pass will draw many images onto the low res texture.
+        // A vertex buffer will be setup (prior to this point)
+        // containing quads, uvs, and image indexes that should be drawn.
+        // A render pipeline will be created earlier (maybe a RenderBundle?).
+
+        // TODO: Surface render pass
+        // Position a quad and draw the low res texture to the surface, then present the surface.
+        // Keep aspect ratio of low res texture.
+    }
+}
+
+struct Game {
     // square_vertex_buffer: wgpu::Buffer,
     // low_res_render_pipeline: wgpu::RenderPipeline,
     // low_res_texture_view: wgpu::TextureView,
