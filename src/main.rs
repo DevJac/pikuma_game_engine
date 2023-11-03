@@ -150,8 +150,6 @@ struct Renderer {
     vertex_buffer_write_offset: u64,
     surface_bind_group: wgpu::BindGroup,
     surface_vertex_buffer: wgpu::Buffer,
-    surface_texture: wgpu::SurfaceTexture,
-    surface_view: wgpu::TextureView,
     surface_render_pipeline: wgpu::RenderPipeline,
     // TODO: Use an instance buffer as well
 }
@@ -189,7 +187,7 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: preferred_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let low_res_texture_view_descriptor = wgpu::TextureViewDescriptor::default();
@@ -389,10 +387,6 @@ impl Renderer {
                 }),
                 multiview: None,
             });
-        let surface_texture: &wgpu::SurfaceTexture = &surface.get_current_texture().unwrap();
-        let surface_view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let surface_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Renderer::new surface_bind_group"),
             layout: &surface_render_pipeline.get_bind_group_layout(0),
@@ -403,7 +397,7 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&surface_view),
+                    resource: wgpu::BindingResource::TextureView(&low_res_texture_view),
                 },
             ],
         });
@@ -432,10 +426,25 @@ impl Renderer {
             vertex_buffer_write_offset: 0,
             surface_bind_group,
             surface_vertex_buffer,
-            surface_texture,
-            surface_view,
             surface_render_pipeline,
         }
+    }
+
+    fn configure_surface(&self) {
+        let window_inner_size = self.window.inner_size();
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.preferred_format,
+                width: window_inner_size.width,
+                height: window_inner_size.height,
+                present_mode: wgpu::PresentMode::AutoNoVsync,
+                // The window surface does not support alpha
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                view_formats: vec![],
+            },
+        );
     }
 
     fn draw_image(&mut self, tank_or_tree: TankOrTree, location: glam::UVec2) {
@@ -482,46 +491,54 @@ impl Renderer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Renderer::draw command_encoder"),
                 });
-        let mut low_res_render_pass: wgpu::RenderPass =
-            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Renderer::draw low_res_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.low_res_texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        low_res_render_pass.set_pipeline(&self.low_res_render_pipeline);
-        low_res_render_pass.set_bind_group(0, &self.low_res_bind_group, &[]);
-        low_res_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        low_res_render_pass.draw(0..self.vertex_buffer_write_offset as u32, 0..1);
-        self.vertex_buffer_write_offset = 0;
-        let mut surface_render_pass =
-            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Renderer::draw surface_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.surface_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        surface_render_pass.set_pipeline(&self.surface_render_pipeline);
-        surface_render_pass.set_bind_group(0, &self.surface_bind_group, &[]);
-        surface_render_pass.set_vertex_buffer(0, self.surface_vertex_buffer.slice(..));
-        surface_render_pass.draw(0..6, 0..1);
-        self.surface_texture.present();
+        {
+            let mut low_res_render_pass: wgpu::RenderPass =
+                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Renderer::draw low_res_render_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.low_res_texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+            low_res_render_pass.set_pipeline(&self.low_res_render_pipeline);
+            low_res_render_pass.set_bind_group(0, &self.low_res_bind_group, &[]);
+            low_res_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            low_res_render_pass.draw(0..self.vertex_buffer_write_offset as u32, 0..1);
+        }
+        {
+            let surface_texture: wgpu::SurfaceTexture = self.surface.get_current_texture().unwrap();
+            let surface_view = surface_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            self.vertex_buffer_write_offset = 0;
+            let mut surface_render_pass =
+                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Renderer::draw surface_render_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+            surface_render_pass.set_pipeline(&self.surface_render_pipeline);
+            surface_render_pass.set_bind_group(0, &self.surface_bind_group, &[]);
+            surface_render_pass.set_vertex_buffer(0, self.surface_vertex_buffer.slice(..));
+            surface_render_pass.draw(0..6, 0..1);
+            surface_texture.present();
+        }
     }
 }
 
