@@ -1,3 +1,8 @@
+struct TextureSize {
+    @location(0) width: u32,
+    @location(1) height: u32,
+};
+
 struct TextureVertex {
     @location(0) position: vec2f,
     @location(1) uv: vec2f,
@@ -12,9 +17,16 @@ struct TextureFragment {
 
 @group(0) @binding(0) var sampler: sampler;
 @group(0) @binding(1) var textures: texture_2d_array<f32>;
+@group(0) @binding(2) var<uniform> texture_size: TextureSize;
 
 @vertex
 fn vertex_main(vertex: TextureVertex) -> TextureFragment {
+    let ndc = vec4f(
+	vertex.position.x / texture_size.width * 2 - 1,
+	vertex.position.y / texture_size.height * 2 - 1,
+	0,
+	1,
+    );
     return TextureFragment(vertex.position, vertex.uv, vertex.lower_right);
 }
 
