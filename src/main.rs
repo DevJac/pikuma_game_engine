@@ -503,7 +503,12 @@ impl Renderer {
                         view: &self.low_res_texture_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.15,
+                                b: 0.1,
+                                a: 1.0,
+                            }),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
@@ -612,7 +617,7 @@ fn main() {
     env_logger::init();
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window: winit::window::Window = winit::window::Window::new(&event_loop).unwrap();
-    let mut game = Game::new(window, 80, 60);
+    let mut game = Game::new(window, 800, 600);
     let start_time = std::time::Instant::now();
     let mut last_render_time = start_time;
     let mut last_fps_log_time = start_time;
