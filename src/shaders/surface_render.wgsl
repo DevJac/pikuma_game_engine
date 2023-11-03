@@ -17,6 +17,6 @@ fn vertex_main(vertex: Vertex) -> Fragment {
 }
 
 @fragment
-fn fragment_main(vertex: TTVertexOut) -> @location(0) vec4f {
+fn fragment_main(vertex: Fragment) -> @location(0) vec4f {
     return textureSample(low_res_texture, low_res_sampler, vertex.uv);
 }

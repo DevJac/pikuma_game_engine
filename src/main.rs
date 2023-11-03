@@ -304,7 +304,7 @@ impl Renderer {
         let vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Renderer::new vertex_buffer"),
             size: 1000,
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let low_res_uniform: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -486,6 +486,10 @@ impl Renderer {
         // TODO: Surface render pass
         // Position a quad and draw the low res texture to the surface, then present the surface.
         // Keep aspect ratio of low res texture.
+        let surface_texture: wgpu::SurfaceTexture = self.surface.get_current_texture().unwrap();
+        let surface_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut command_encoder: wgpu::CommandEncoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -513,10 +517,6 @@ impl Renderer {
             low_res_render_pass.draw(0..self.vertex_buffer_write_offset as u32, 0..1);
         }
         {
-            let surface_texture: wgpu::SurfaceTexture = self.surface.get_current_texture().unwrap();
-            let surface_view = surface_texture
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
             self.vertex_buffer_write_offset = 0;
             let mut surface_render_pass =
                 command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -537,8 +537,9 @@ impl Renderer {
             surface_render_pass.set_bind_group(0, &self.surface_bind_group, &[]);
             surface_render_pass.set_vertex_buffer(0, self.surface_vertex_buffer.slice(..));
             surface_render_pass.draw(0..6, 0..1);
-            surface_texture.present();
         }
+        self.queue.submit([command_encoder.finish()]);
+        surface_texture.present();
     }
 }
 
@@ -559,7 +560,9 @@ impl Game {
 
     fn render(&mut self, t: std::time::Duration) {
         self.renderer
-            .draw_image(TankOrTree::Tree, glam::UVec2::new(30, 30));
+            .draw_image(TankOrTree::Tank, glam::UVec2::new(40, 25));
+        self.renderer
+            .draw_image(TankOrTree::Tree, glam::UVec2::new(20, 10));
         self.renderer.draw();
     }
 }
