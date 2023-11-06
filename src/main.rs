@@ -15,6 +15,7 @@ use pikuma_game_engine::renderer;
 
 struct Game {
     renderer: renderer::Renderer,
+    width: u32,
     tank_location: glam::Vec2,
 }
 
@@ -24,7 +25,8 @@ impl Game {
         renderer.configure_surface();
         Game {
             renderer,
-            tank_location: glam::Vec2::new(-20.0, 25.0),
+            width,
+            tank_location: glam::Vec2::new(0.0, 25.0),
         }
     }
 
@@ -33,7 +35,10 @@ impl Game {
     }
 
     fn render(&mut self, delta_t: f32) {
-        self.tank_location += glam::Vec2::new(50.0, 0.0) * delta_t;
+        self.tank_location += glam::Vec2::new(1.0, 0.0) * delta_t;
+        if self.tank_location.x > self.width as f32 {
+            self.tank_location = glam::Vec2::new(0.0, 25.0);
+        }
         self.renderer
             .draw_image(renderer::TankOrTree::Tree, glam::UVec2::new(20, 10));
         self.renderer.draw_image(
