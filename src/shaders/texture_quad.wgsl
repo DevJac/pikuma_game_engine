@@ -22,10 +22,10 @@ struct TextureFragment {
 @vertex
 fn vertex_main(vertex: TextureVertex) -> TextureFragment {
     let ndc = vec4f(
-	vertex.position.x / f32(texture_size.width) * 2.0 - 1.0,
-	vertex.position.y / f32(texture_size.height) * 2.0 - 1.0,
-	0.0,
-	1.0,
+        vertex.position.x / f32(texture_size.width) * 2.0 - 1.0,
+        vertex.position.y / f32(texture_size.height) * 2.0 - 1.0,
+        0.0,
+        1.0,
     );
     return TextureFragment(ndc, vertex.uv, vertex.lower_right);
 }
@@ -39,8 +39,8 @@ fn fragment_main(fragment: TextureFragment) -> @location(0) vec4f {
     // the lower right of the initialized portion of the texture.
     let full_dim: vec2u = textureDimensions(textures);
     let adjusted_uv = vec2f(
-	fragment.uv.x * (f32(fragment.lower_right.x) / f32(full_dim.x)),
-	fragment.uv.y * (f32(fragment.lower_right.y) / f32(full_dim.y))
+        fragment.uv.x * (f32(fragment.lower_right.x) / f32(full_dim.x)),
+        fragment.uv.y * (f32(fragment.lower_right.y) / f32(full_dim.y))
     );
     return textureSample(textures, textures_sampler, adjusted_uv, fragment.lower_right.z);
 }

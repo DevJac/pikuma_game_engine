@@ -151,6 +151,7 @@ struct Renderer {
     surface_bind_group: wgpu::BindGroup,
     surface_vertex_buffer: wgpu::Buffer,
     surface_render_pipeline: wgpu::RenderPipeline,
+    surface_aspect_ratio_uniform: wgpu::Buffer,
     // TODO: Use an instance buffer as well
 }
 
@@ -387,6 +388,12 @@ impl Renderer {
                 }),
                 multiview: None,
             });
+        let surface_aspect_ratio_uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Renderer::new aspect_ratio_uniform"),
+            size: std::mem::size_of::<glam::Vec2>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let surface_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Renderer::new surface_bind_group"),
             layout: &surface_render_pipeline.get_bind_group_layout(0),
@@ -398,6 +405,14 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&low_res_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &surface_aspect_ratio_uniform,
+                        offset: 0,
+                        size: None,
+                    }),
                 },
             ],
         });
@@ -427,11 +442,27 @@ impl Renderer {
             surface_bind_group,
             surface_vertex_buffer,
             surface_render_pipeline,
+            surface_aspect_ratio_uniform,
         }
     }
 
     fn configure_surface(&self) {
         let window_inner_size = self.window.inner_size();
+        let canvas_to_surface_ratio_width: f32 =
+            (self.low_res_texture_width as f32) / (window_inner_size.width as f32);
+        let canvas_to_surface_ratio_height: f32 =
+            (self.low_res_texture_height as f32) / (window_inner_size.height as f32);
+        let maximum_canvas_to_surface_ratio: f32 =
+            canvas_to_surface_ratio_width.max(canvas_to_surface_ratio_height);
+        let canvas_scale = glam::Vec2::new(
+            canvas_to_surface_ratio_width / maximum_canvas_to_surface_ratio,
+            canvas_to_surface_ratio_height / maximum_canvas_to_surface_ratio,
+        );
+        self.queue.write_buffer(
+            &self.surface_aspect_ratio_uniform,
+            0,
+            bytemuck::bytes_of(&canvas_scale),
+        );
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
