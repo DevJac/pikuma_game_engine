@@ -35,7 +35,7 @@ impl Game {
     }
 
     fn render(&mut self, delta_t: f32) {
-        self.tank_location += glam::Vec2::new(1.0, 0.0) * delta_t;
+        self.tank_location += glam::Vec2::new(50.0, 0.0) * delta_t;
         if self.tank_location.x > self.width as f32 {
             self.tank_location = glam::Vec2::new(0.0, 25.0);
         }

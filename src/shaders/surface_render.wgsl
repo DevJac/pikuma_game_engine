@@ -25,5 +25,12 @@ fn vertex_main(vertex: Vertex) -> Fragment {
 
 @fragment
 fn fragment_main(vertex: Fragment) -> @location(0) vec4f {
-    return textureSample(low_res_texture, low_res_sampler, vertex.uv);
+    let texture_dims = vec2f(textureDimensions(low_res_texture));
+    let pixel_size = fwidth(vertex.uv) * texture_dims;
+    let tx = vertex.uv * texture_dims;
+    let mod_tx = (tx - 0.5) % 1.0;
+    let snapped = smoothstep(0.5 - (pixel_size / 2.0), 0.5 + (pixel_size / 2.0), mod_tx);
+    let correction = snapped - mod_tx;
+    let corrected_uv = vertex.uv + (correction / texture_dims);
+    return textureSample(low_res_texture, low_res_sampler, corrected_uv);
 }
