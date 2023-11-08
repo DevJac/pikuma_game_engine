@@ -113,7 +113,8 @@ fn main() {
                         last_fps_log_time = now;
                         let fps = 1.0 / render_time_stats.mean();
                         let fps_std = render_time_stats.std() / render_time_stats.mean().powi(2);
-                        log::info!("FPS: {:.0} ± {:.0}", fps, fps_std);
+                        let fps_99th = 1.0 / render_time_stats.percentile_99();
+                        log::info!("FPS: {:.0} ({:.0} ± {:.0})", fps_99th, fps, fps_std);
                     }
                 }
                 _ => {}
