@@ -47,7 +47,8 @@ const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
     },
 ];
 
-fn unit_square() -> Vec<Vertex> {
+/// Normalized device coordinates (NDC)
+fn ndc_square() -> Vec<Vertex> {
     let v0 = Vertex {
         position: glam::Vec2::new(-1.0, -1.0),
         uv: glam::Vec2::new(0.0, 0.0),
@@ -418,7 +419,7 @@ impl Renderer {
                 },
             ],
         });
-        let surface_square = unit_square();
+        let surface_square = ndc_square();
         let surface_square_bytes: &[u8] = bytemuck::cast_slice(surface_square.as_slice());
         let surface_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Renderer::new surface_vertex_buffer"),
