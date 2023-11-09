@@ -47,8 +47,10 @@ const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
     },
 ];
 
+const SQUARE_VERTS: usize = 6;
+
 /// Normalized device coordinates (NDC)
-fn ndc_square() -> Vec<Vertex> {
+fn ndc_square() -> [Vertex; SQUARE_VERTS] {
     let v0 = Vertex {
         position: glam::Vec2::new(-1.0, -1.0),
         uv: glam::Vec2::new(0.0, 0.0),
@@ -65,14 +67,14 @@ fn ndc_square() -> Vec<Vertex> {
         position: glam::Vec2::new(1.0, -1.0),
         uv: glam::Vec2::new(1.0, 0.0),
     };
-    vec![v0, v1, v2, v2, v3, v0]
+    [v0, v1, v2, v2, v3, v0]
 }
 
 fn square(
     position: glam::UVec2,
     texture_size: glam::UVec2,
     texture_index: u32,
-) -> Vec<TextureVertex> {
+) -> [TextureVertex; SQUARE_VERTS] {
     let lower_right = glam::UVec3::new(texture_size.x, texture_size.y, texture_index);
     let v0 = TextureVertex {
         position: glam::Vec2::new(position.x as f32, position.y as f32),
@@ -97,7 +99,7 @@ fn square(
         uv: glam::Vec2::new(1.0, 0.0),
         lower_right,
     };
-    vec![v0, v1, v2, v2, v3, v0]
+    [v0, v1, v2, v2, v3, v0]
 }
 
 /// Counter-clockwise rotation matrix
@@ -122,6 +124,8 @@ struct LowResPass {
     texture_view: wgpu::TextureView,
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    draw_buffer_square_index: u32,
 }
 
 impl LowResPass {
@@ -133,7 +137,7 @@ impl LowResPass {
         textures_view: &wgpu::TextureView,
     ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("LowResPass.texture"),
+            label: Some("LowResPass::new texture"),
             size: wgpu::Extent3d {
                 width: canvas_width,
                 height: canvas_height,
@@ -150,7 +154,7 @@ impl LowResPass {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/low_res.wgsl"));
         let pipeline: wgpu::RenderPipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("LowResPass.pipeline"),
+                label: Some("LowResPass::new pipeline"),
                 layout: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -177,7 +181,7 @@ impl LowResPass {
                 multiview: None,
             });
         let uniform_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("LowResPass.uniform_buffer"),
+            label: Some("LowResPass::new uniform_buffer"),
             size: std::mem::size_of::<glam::UVec2>() as u64,
             usage: wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: true,
@@ -192,7 +196,7 @@ impl LowResPass {
         uniform_buffer.unmap();
         let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
         let bind_group: wgpu::BindGroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("LowResPass.bind_group"),
+            label: Some("LowResPass::new bind_group"),
             layout: &pipeline.get_bind_group_layout(0),
             entries: &[
                 wgpu::BindGroupEntry {
@@ -213,12 +217,63 @@ impl LowResPass {
                 },
             ],
         });
+        let vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Renderer::new vertex_buffer"),
+            size: 1000,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         Self {
             texture,
             texture_view,
             pipeline,
             bind_group,
+            vertex_buffer,
+            draw_buffer_square_index: 0,
         }
+    }
+
+    fn draw_image(&mut self, queue: &wgpu::Queue, tank_or_tree: TankOrTree, location: glam::UVec2) {
+        let texture_index = match tank_or_tree {
+            TankOrTree::Tank => 0,
+            TankOrTree::Tree => 1,
+        };
+        let square_vertices = square(location, glam::UVec2::new(32, 32), texture_index);
+        let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
+        queue.write_buffer(
+            &self.vertex_buffer,
+            self.draw_buffer_square_index as u64 * square_bytes.len() as u64,
+            square_bytes,
+        );
+        self.draw_buffer_square_index += 1;
+    }
+
+    fn draw(&mut self, command_encoder: &mut wgpu::CommandEncoder) {
+        let mut pass: wgpu::RenderPass =
+            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("LowResPass::draw pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.15,
+                            b: 0.1,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.draw(0..self.draw_buffer_square_index * SQUARE_VERTS as u32, 0..1);
+        self.draw_buffer_square_index = 0;
     }
 }
 
@@ -233,8 +288,6 @@ pub struct Renderer {
     // Textures / sprites
     textures: wgpu::Texture,
     textures_view: wgpu::TextureView,
-    vertex_buffer: wgpu::Buffer,
-    vertex_buffer_write_offset: u64,
     surface_bind_group: wgpu::BindGroup,
     surface_vertex_buffer: wgpu::Buffer,
     surface_render_pipeline: wgpu::RenderPipeline,
@@ -270,12 +323,6 @@ impl Renderer {
             preferred_format,
             &textures_view,
         );
-        let vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Renderer::new vertex_buffer"),
-            size: 1000,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
         let surface_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/surface_render.wgsl"));
         let surface_render_pipeline =
@@ -363,8 +410,6 @@ impl Renderer {
             low_res_pass,
             textures,
             textures_view,
-            vertex_buffer,
-            vertex_buffer_write_offset: 0,
             surface_bind_group,
             surface_vertex_buffer,
             surface_render_pipeline,
@@ -475,21 +520,8 @@ impl Renderer {
     }
 
     pub fn draw_image(&mut self, tank_or_tree: TankOrTree, location: glam::UVec2) {
-        let texture_index = match tank_or_tree {
-            TankOrTree::Tank => 0,
-            TankOrTree::Tree => 1,
-        };
-        let texture_vertex_size = std::mem::size_of::<TextureVertex>() as u64;
-        let square_vertices = square(location, glam::UVec2::new(32, 32), texture_index);
-        let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
-        let start = self.vertex_buffer_write_offset;
-        let end = start + square_vertices.len() as u64;
-        self.queue.write_buffer(
-            &self.vertex_buffer,
-            start * texture_vertex_size,
-            square_bytes,
-        );
-        self.vertex_buffer_write_offset = end;
+        self.low_res_pass
+            .draw_image(&self.queue, tank_or_tree, location);
     }
 
     pub fn draw(&mut self) {
@@ -522,34 +554,8 @@ impl Renderer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Renderer::draw command_encoder"),
                 });
+        self.low_res_pass.draw(&mut command_encoder);
         {
-            let mut low_res_render_pass: wgpu::RenderPass =
-                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Renderer::draw low_res_render_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &self.low_res_pass.texture_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.15,
-                                b: 0.1,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-            low_res_render_pass.set_pipeline(&self.low_res_pass.pipeline);
-            low_res_render_pass.set_bind_group(0, &self.low_res_pass.bind_group, &[]);
-            low_res_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            low_res_render_pass.draw(0..self.vertex_buffer_write_offset as u32, 0..1);
-        }
-        {
-            self.vertex_buffer_write_offset = 0;
             let mut surface_render_pass =
                 command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Renderer::draw surface_render_pass"),
