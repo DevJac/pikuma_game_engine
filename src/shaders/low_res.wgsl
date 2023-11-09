@@ -15,9 +15,9 @@ struct TextureFragment {
     @location(2) @interpolate(flat) lower_right: vec3u,
 };
 
-@group(0) @binding(0) var textures_sampler: sampler;
-@group(0) @binding(1) var textures: texture_2d_array<f32>;
-@group(0) @binding(2) var<uniform> texture_size: TextureSize;
+@group(0) @binding(0) var<uniform> texture_size: TextureSize;
+@group(0) @binding(1) var textures_sampler: sampler;
+@group(0) @binding(2) var textures: texture_2d_array<f32>;
 
 @vertex
 fn vertex_main(vertex: TextureVertex) -> TextureFragment {
