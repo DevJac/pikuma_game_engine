@@ -8,9 +8,9 @@ struct Fragment {
     @location(0) uv: vec2f,
 }
 
-@group(0) @binding(0) var low_res_sampler: sampler;
-@group(0) @binding(1) var low_res_texture: texture_2d<f32>;
-@group(0) @binding(2) var<uniform> aspect_ratio_scale: vec2f;
+@group(0) @binding(0) var<uniform> aspect_ratio_scale: vec2f;
+@group(0) @binding(1) var low_res_sampler: sampler;
+@group(0) @binding(2) var low_res_texture: texture_2d<f32>;
 
 @vertex
 fn vertex_main(vertex: Vertex) -> Fragment {

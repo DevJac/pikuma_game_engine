@@ -47,10 +47,10 @@ const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
     },
 ];
 
-const SQUARE_VERTS: usize = 6;
+const SQUARE_VERTS: u32 = 6;
 
 /// Normalized device coordinates (NDC)
-fn ndc_square() -> [Vertex; SQUARE_VERTS] {
+fn ndc_square() -> [Vertex; SQUARE_VERTS as usize] {
     let v0 = Vertex {
         position: glam::Vec2::new(-1.0, -1.0),
         uv: glam::Vec2::new(0.0, 0.0),
@@ -74,7 +74,7 @@ fn square(
     position: glam::UVec2,
     texture_size: glam::UVec2,
     texture_index: u32,
-) -> [TextureVertex; SQUARE_VERTS] {
+) -> [TextureVertex; SQUARE_VERTS as usize] {
     let lower_right = glam::UVec3::new(texture_size.x, texture_size.y, texture_index);
     let v0 = TextureVertex {
         position: glam::Vec2::new(position.x as f32, position.y as f32),
@@ -120,8 +120,8 @@ pub enum TankOrTree {
 }
 
 struct LowResPass {
-    texture: wgpu::Texture,
-    texture_view: wgpu::TextureView,
+    low_res_texture: wgpu::Texture,
+    low_res_texture_view: wgpu::TextureView,
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
@@ -134,10 +134,10 @@ impl LowResPass {
         canvas_width: u32,
         canvas_height: u32,
         preferred_format: wgpu::TextureFormat,
-        textures_view: &wgpu::TextureView,
+        sprites_texture_view: &wgpu::TextureView,
     ) -> Self {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("LowResPass::new texture"),
+        let low_res_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("low res texture"),
             size: wgpu::Extent3d {
                 width: canvas_width,
                 height: canvas_height,
@@ -150,11 +150,13 @@ impl LowResPass {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let low_res_texture_view =
+            low_res_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // TODO: Stop including the shader in the compiled binary. Compile them at runtime.
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/low_res.wgsl"));
         let pipeline: wgpu::RenderPipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("LowResPass::new pipeline"),
+                label: Some("low res pipeline"),
                 layout: None,
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -181,7 +183,7 @@ impl LowResPass {
                 multiview: None,
             });
         let uniform_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("LowResPass::new uniform_buffer"),
+            label: Some("low res uniform buffer"),
             size: std::mem::size_of::<glam::UVec2>() as u64,
             usage: wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: true,
@@ -196,7 +198,7 @@ impl LowResPass {
         uniform_buffer.unmap();
         let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
         let bind_group: wgpu::BindGroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("LowResPass::new bind_group"),
+            label: Some("low res bind group"),
             layout: &pipeline.get_bind_group_layout(0),
             entries: &[
                 wgpu::BindGroupEntry {
@@ -213,19 +215,20 @@ impl LowResPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&textures_view),
+                    resource: wgpu::BindingResource::TextureView(&sprites_texture_view),
                 },
             ],
         });
+        // TODO: Use an instance buffer as well
         let vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Renderer::new vertex_buffer"),
+            label: Some("low res vertex buffer"),
             size: 1000,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         Self {
-            texture,
-            texture_view,
+            low_res_texture,
+            low_res_texture_view,
             pipeline,
             bind_group,
             vertex_buffer,
@@ -251,9 +254,9 @@ impl LowResPass {
     fn draw(&mut self, command_encoder: &mut wgpu::CommandEncoder) {
         let mut pass: wgpu::RenderPass =
             command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("LowResPass::draw pass"),
+                label: Some("low res render pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.texture_view,
+                    view: &self.low_res_texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -272,27 +275,145 @@ impl LowResPass {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..self.draw_buffer_square_index * SQUARE_VERTS as u32, 0..1);
+        pass.draw(0..self.draw_buffer_square_index * SQUARE_VERTS, 0..1);
         self.draw_buffer_square_index = 0;
     }
 }
 
+struct SurfacePass {
+    pipeline: wgpu::RenderPipeline,
+    aspect_ratio_uniform: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+}
+
+impl SurfacePass {
+    fn new(
+        device: &wgpu::Device,
+        preferred_format: wgpu::TextureFormat,
+        low_res_texture_view: &wgpu::TextureView,
+    ) -> Self {
+        // TODO: Stop including the shader in the compiled binary. Compile them at runtime.
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/surface.wgsl"));
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("surface pipeline"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vertex_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: VERTEX_ATTRIBUTES,
+                }],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fragment_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: preferred_format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+        });
+        let aspect_ratio_uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("surface uniform"),
+            size: std::mem::size_of::<glam::Vec2>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("surface sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 0.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("surface bind group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &aspect_ratio_uniform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&low_res_texture_view),
+                },
+            ],
+        });
+        let ndc_square = ndc_square();
+        let ndc_square_bytes: &[u8] = bytemuck::cast_slice(ndc_square.as_slice());
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("surface vertex buffer"),
+            contents: ndc_square_bytes,
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        Self {
+            pipeline,
+            aspect_ratio_uniform,
+            bind_group,
+            vertex_buffer,
+        }
+    }
+
+    fn update_aspect_ratio(&self, queue: &wgpu::Queue, scales: glam::Vec2) {
+        queue.write_buffer(&self.aspect_ratio_uniform, 0, bytemuck::bytes_of(&scales));
+    }
+
+    fn draw(&self, command_encoder: &mut wgpu::CommandEncoder, surface_view: &wgpu::TextureView) {
+        let mut surface_render_pass =
+            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("surface render pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        surface_render_pass.set_pipeline(&self.pipeline);
+        surface_render_pass.set_bind_group(0, &self.bind_group, &[]);
+        surface_render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        surface_render_pass.draw(0..SQUARE_VERTS, 0..1);
+    }
+}
+
 pub struct Renderer {
-    // WGPU Stuff
+    // WGPU stuff
     surface: wgpu::Surface,
     preferred_format: wgpu::TextureFormat,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    // Render Passes
+    // Render passes
     low_res_pass: LowResPass,
-    // Textures / sprites
-    textures: wgpu::Texture,
-    textures_view: wgpu::TextureView,
-    surface_bind_group: wgpu::BindGroup,
-    surface_vertex_buffer: wgpu::Buffer,
-    surface_render_pipeline: wgpu::RenderPipeline,
-    surface_aspect_ratio_uniform: wgpu::Buffer,
-    // TODO: Use an instance buffer as well
+    surface_pass: SurfacePass,
     // Window
     // unsafe: window must live longer than surface.
     window: winit::window::Window,
@@ -315,92 +436,19 @@ impl Renderer {
             .block_on()
             .unwrap();
         log::debug!("WGPU setup");
-        let (textures, textures_view) = Renderer::load_textures(&device, &queue);
+        let (_sprites_texture, sprites_texture_view) = Renderer::load_textures(&device, &queue);
         let low_res_pass = LowResPass::new(
             &device,
             canvas_width,
             canvas_height,
             preferred_format,
-            &textures_view,
+            &sprites_texture_view,
         );
-        let surface_shader =
-            device.create_shader_module(wgpu::include_wgsl!("shaders/surface_render.wgsl"));
-        let surface_render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Renderer::new surface_render_pipeline"),
-                layout: None,
-                vertex: wgpu::VertexState {
-                    module: &surface_shader,
-                    entry_point: "vertex_main",
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: VERTEX_ATTRIBUTES,
-                    }],
-                },
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &surface_shader,
-                    entry_point: "fragment_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: preferred_format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                multiview: None,
-            });
-        let surface_aspect_ratio_uniform = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Renderer::new aspect_ratio_uniform"),
-            size: std::mem::size_of::<glam::Vec2>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let surface_sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Renderer::new low_res_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 0.0,
-            compare: None,
-            anisotropy_clamp: 1,
-            border_color: None,
-        });
-        let surface_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Renderer::new surface_bind_group"),
-            layout: &surface_render_pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Sampler(&surface_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&low_res_pass.texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &surface_aspect_ratio_uniform,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
-        });
-        let surface_square = ndc_square();
-        let surface_square_bytes: &[u8] = bytemuck::cast_slice(surface_square.as_slice());
-        let surface_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Renderer::new surface_vertex_buffer"),
-            contents: surface_square_bytes,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let surface_pass = SurfacePass::new(
+            &device,
+            preferred_format,
+            &low_res_pass.low_res_texture_view,
+        );
         Self {
             window,
             surface,
@@ -408,12 +456,7 @@ impl Renderer {
             device,
             queue,
             low_res_pass,
-            textures,
-            textures_view,
-            surface_bind_group,
-            surface_vertex_buffer,
-            surface_render_pipeline,
-            surface_aspect_ratio_uniform,
+            surface_pass,
         }
     }
 
@@ -422,7 +465,7 @@ impl Renderer {
         queue: &wgpu::Queue,
     ) -> (wgpu::Texture, wgpu::TextureView) {
         let textures: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Renderer::new textures"),
+            label: Some("sprite textures"),
             size: wgpu::Extent3d {
                 width: 32,
                 height: 32,
@@ -490,20 +533,17 @@ impl Renderer {
     pub fn configure_surface(&self) {
         let window_inner_size = self.window.inner_size();
         let canvas_to_surface_ratio_width: f32 =
-            (self.low_res_pass.texture.width() as f32) / (window_inner_size.width as f32);
+            (self.low_res_pass.low_res_texture.width() as f32) / (window_inner_size.width as f32);
         let canvas_to_surface_ratio_height: f32 =
-            (self.low_res_pass.texture.height() as f32) / (window_inner_size.height as f32);
+            (self.low_res_pass.low_res_texture.height() as f32) / (window_inner_size.height as f32);
         let maximum_canvas_to_surface_ratio: f32 =
             canvas_to_surface_ratio_width.max(canvas_to_surface_ratio_height);
-        let canvas_scale = glam::Vec2::new(
+        let canvas_scales = glam::Vec2::new(
             canvas_to_surface_ratio_width / maximum_canvas_to_surface_ratio,
             canvas_to_surface_ratio_height / maximum_canvas_to_surface_ratio,
         );
-        self.queue.write_buffer(
-            &self.surface_aspect_ratio_uniform,
-            0,
-            bytemuck::bytes_of(&canvas_scale),
-        );
+        self.surface_pass
+            .update_aspect_ratio(&self.queue, canvas_scales);
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
@@ -525,26 +565,6 @@ impl Renderer {
     }
 
     pub fn draw(&mut self) {
-        // Steps:
-        // - Unmap vertex buffer
-        // - (We might have to copy from the write buffer to a non-mappable buffer?)
-        // - Render vertex buffer
-        // - Map vertex buffer and wait for mapping to finish
-
-        // TODO: Setup vertex buffer
-        // We need to know the size of our vertex buffer before creating.
-        // We will need to create a CPU data structure (vec based) to store the images
-        // we want to draw, and then move them into a vertex buffer when it's time to render.
-
-        // TODO: Low res render pass
-        // Low res render pass will draw many images onto the low res texture.
-        // A vertex buffer will be setup (prior to this point)
-        // containing quads, uvs, and image indexes that should be drawn.
-        // A render pipeline will be created earlier (maybe a RenderBundle?).
-
-        // TODO: Surface render pass
-        // Position a quad and draw the low res texture to the surface, then present the surface.
-        // Keep aspect ratio of low res texture.
         let surface_texture: wgpu::SurfaceTexture = self.surface.get_current_texture().unwrap();
         let surface_view = surface_texture
             .texture
@@ -552,30 +572,10 @@ impl Renderer {
         let mut command_encoder: wgpu::CommandEncoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Renderer::draw command_encoder"),
+                    label: Some("command encoder"),
                 });
         self.low_res_pass.draw(&mut command_encoder);
-        {
-            let mut surface_render_pass =
-                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Renderer::draw surface_render_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &surface_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-            surface_render_pass.set_pipeline(&self.surface_render_pipeline);
-            surface_render_pass.set_bind_group(0, &self.surface_bind_group, &[]);
-            surface_render_pass.set_vertex_buffer(0, self.surface_vertex_buffer.slice(..));
-            surface_render_pass.draw(0..6, 0..1);
-        }
+        self.surface_pass.draw(&mut command_encoder, &surface_view);
         self.queue.submit([command_encoder.finish()]);
         surface_texture.present();
     }
