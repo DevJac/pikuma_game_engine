@@ -2,7 +2,7 @@ use pollster::FutureExt as _;
 use wgpu::util::DeviceExt as _;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 struct Vertex {
     position: glam::Vec2,
     uv: glam::Vec2,
@@ -22,7 +22,7 @@ const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
 ];
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 struct TextureVertex {
     position: glam::Vec2,
     uv: glam::Vec2,
@@ -71,11 +71,11 @@ fn ndc_square() -> [Vertex; SQUARE_VERTS as usize] {
 }
 
 fn square(
-    position: glam::Vec2,
-    texture_size: glam::Vec2,
+    position: glam::UVec2,
+    texture_size: glam::UVec2,
     texture_index: u32,
 ) -> [TextureVertex; SQUARE_VERTS as usize] {
-    let lower_right = glam::UVec3::new(texture_size.x as u32, texture_size.y as u32, texture_index);
+    let lower_right = glam::UVec3::new(texture_size.x, texture_size.y, texture_index);
     let v0 = TextureVertex {
         position: glam::Vec2::new(position.x as f32, position.y as f32),
         uv: glam::Vec2::new(0.0, 0.0),
@@ -176,7 +176,7 @@ impl LowResPass {
                     entry_point: "fragment_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: preferred_format,
-                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -196,20 +196,7 @@ impl LowResPass {
                 canvas_height,
             )));
         uniform_buffer.unmap();
-        let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("low res sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 0.0,
-            compare: None,
-            anisotropy_clamp: 1,
-            border_color: None,
-        });
+        let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
         let bind_group: wgpu::BindGroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("low res bind group"),
             layout: &pipeline.get_bind_group_layout(0),
@@ -249,12 +236,12 @@ impl LowResPass {
         }
     }
 
-    fn draw_image(&mut self, queue: &wgpu::Queue, tank_or_tree: TankOrTree, location: glam::Vec2) {
+    fn draw_image(&mut self, queue: &wgpu::Queue, tank_or_tree: TankOrTree, location: glam::UVec2) {
         let texture_index = match tank_or_tree {
             TankOrTree::Tank => 0,
             TankOrTree::Tree => 1,
         };
-        let square_vertices = square(location, glam::Vec2::new(32.0, 32.0), texture_index);
+        let square_vertices = square(location, glam::UVec2::new(32, 32), texture_index);
         let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
         queue.write_buffer(
             &self.vertex_buffer,
@@ -477,13 +464,6 @@ impl Renderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> (wgpu::Texture, wgpu::TextureView) {
-        fn make_transparencies_black(img: &mut image::DynamicImage) {
-            for p in img.as_mut_rgba8().unwrap().pixels_mut() {
-                if p[3] == 0 {
-                    *p = image::Rgba([0, 0, 0, 0]);
-                }
-            }
-        }
         let textures: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sprite textures"),
             size: wgpu::Extent3d {
@@ -500,17 +480,15 @@ impl Renderer {
             view_formats: &[],
         });
         let textures_view = textures.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut tank: image::DynamicImage =
+        let tank: image::DynamicImage =
             image::io::Reader::open("assets/images/tank-panther-right.png")
                 .unwrap()
                 .decode()
                 .unwrap();
-        let mut tree: image::DynamicImage = image::io::Reader::open("assets/images/tree.png")
+        let tree: image::DynamicImage = image::io::Reader::open("assets/images/tree.png")
             .unwrap()
             .decode()
             .unwrap();
-        make_transparencies_black(&mut tank);
-        make_transparencies_black(&mut tree);
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &textures,
@@ -581,7 +559,7 @@ impl Renderer {
         );
     }
 
-    pub fn draw_image(&mut self, tank_or_tree: TankOrTree, location: glam::Vec2) {
+    pub fn draw_image(&mut self, tank_or_tree: TankOrTree, location: glam::UVec2) {
         self.low_res_pass
             .draw_image(&self.queue, tank_or_tree, location);
     }

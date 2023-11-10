@@ -26,7 +26,7 @@ impl Game {
         Game {
             renderer,
             width,
-            tank_location: glam::Vec2::new(5.0, 25.0),
+            tank_location: glam::Vec2::new(0.0, 25.0),
         }
     }
 
@@ -37,12 +37,14 @@ impl Game {
     fn render(&mut self, delta_t: f32) {
         self.tank_location += glam::Vec2::new(50.0, 0.0) * delta_t;
         if self.tank_location.x > self.width as f32 {
-            self.tank_location = glam::Vec2::new(-50.0, 25.0);
+            self.tank_location = glam::Vec2::new(0.0, 25.0);
         }
         self.renderer
-            .draw_image(renderer::TankOrTree::Tree, glam::Vec2::new(20.0, 10.0));
-        self.renderer
-            .draw_image(renderer::TankOrTree::Tank, self.tank_location);
+            .draw_image(renderer::TankOrTree::Tree, glam::UVec2::new(20, 10));
+        self.renderer.draw_image(
+            renderer::TankOrTree::Tank,
+            self.tank_location.round().as_uvec2(),
+        );
         self.renderer.draw();
     }
 }

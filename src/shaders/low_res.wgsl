@@ -38,17 +38,9 @@ fn fragment_main(fragment: TextureFragment) -> @location(0) vec4f {
     // We need to adjust the UV coordinates so that (1, 1) refers to
     // the lower right of the initialized portion of the texture.
     let full_dim: vec2u = textureDimensions(textures);
-    let aspect_ratio_corrected_uv = fragment.uv * vec2f(fragment.lower_right.xy) / vec2f(full_dim.xy);
-
-    let texture_dims = vec2f(fragment.lower_right.xy);
-    let pixel_size = fwidth(aspect_ratio_corrected_uv) * texture_dims * 0.5;
-    let tx = aspect_ratio_corrected_uv * texture_dims;
-    let mod_tx = (tx - 0.5) % 1.0;
-    let snapped = smoothstep(0.5 - (pixel_size / 2.0), 0.5 + (pixel_size / 2.0), mod_tx);
-    let correction = snapped - mod_tx;
-    let corrected_uv = aspect_ratio_corrected_uv + (correction / texture_dims);
-
-    let color: vec4f = textureSample(textures, textures_sampler, corrected_uv, fragment.lower_right.z);
-    let premultiplied_color: vec4f = vec4f(color.rgb * pow(color.a, 1.0 / 2.0), color.a);
-    return premultiplied_color;
+    let adjusted_uv = vec2f(
+        fragment.uv.x * (f32(fragment.lower_right.x) / f32(full_dim.x)),
+        fragment.uv.y * (f32(fragment.lower_right.y) / f32(full_dim.y))
+    );
+    return textureSample(textures, textures_sampler, adjusted_uv, fragment.lower_right.z);
 }
