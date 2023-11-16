@@ -9,24 +9,6 @@ struct Entity {
     generation: usize,
 }
 
-struct FreeEntityIds {
-    ids: Vec<usize>,
-}
-
-impl FreeEntityIds {
-    fn new() -> Self {
-        Self { ids: Vec::new() }
-    }
-
-    fn push(&mut self, id: usize) {
-        self.ids.push(id)
-    }
-
-    fn pop(&mut self) -> Option<usize> {
-        self.ids.pop()
-    }
-}
-
 struct EntityGenerations {
     generations: Vec<usize>,
 }
@@ -106,7 +88,7 @@ struct Registry {
     /// The maximum entity id we have issued. This is the "length" of the Registry.
     next_entity_id: usize,
     /// Entity ids that are free to issue again.
-    free_entity_ids: FreeEntityIds,
+    free_entity_ids: Vec<usize>,
     /// The current generation of the entities.
     /// If a given Entity has a generation less than this,
     /// that Entity is no longer valid.
@@ -119,7 +101,7 @@ impl Registry {
     fn new() -> Self {
         Self {
             next_entity_id: 0,
-            free_entity_ids: FreeEntityIds::new(),
+            free_entity_ids: Vec::new(),
             entity_generations: EntityGenerations::new(),
             component_pools: std::collections::HashMap::new(),
         }
