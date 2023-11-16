@@ -176,6 +176,26 @@ impl Registry {
         }
         Ok(())
     }
+
+    fn get_component<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+    ) -> Result<Option<&T>, DeadEntity> {
+        if !self.is_entity_alive(entity) {
+            return Err(DeadEntity::DeadEntity);
+        }
+        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        match self.component_pools.get_mut(&type_id) {
+            None => {
+                return Ok(None);
+            }
+            Some(component_pool) => {
+                let component_pool: &ComponentPool<T> =
+                    (&mut **component_pool).downcast_mut().unwrap();
+                return Ok(component_pool.get(entity.id));
+            }
+        }
+    }
 }
 
 #[test]
@@ -206,6 +226,7 @@ fn test_registry_happy_path() {
 
     let e2: Entity = registry.create_entity();
     registry.add_component(e2, 5_i32).unwrap();
+    assert_eq!(registry.get_component::<i32>(e2).unwrap().unwrap(), &5_i32);
 
     assert_eq!(registry.next_entity_id, 3);
     registry.remove_entity(e0).unwrap();
