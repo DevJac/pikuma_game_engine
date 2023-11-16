@@ -209,6 +209,9 @@ fn test_registry_happy_path() {
     let e2: Entity = registry.create_entity();
     registry.add_component(e2, 5_i32).unwrap();
     assert_eq!(registry.get_component::<i32>(e2).unwrap().unwrap(), &5_i32);
+    registry.remove_entity(e2).unwrap();
+    let e2: Entity = registry.create_entity();
+    assert_eq!(registry.get_component::<i32>(e2).unwrap(), None);
 
     assert_eq!(registry.next_entity_id, 3);
     registry.remove_entity(e0).unwrap();
