@@ -53,35 +53,55 @@ impl EntityGenerations {
 }
 
 struct ComponentPool<T: Clone> {
-    components: Vec<Option<T>>,
+    components: Vec<(usize, Option<T>)>,
 }
 
 impl<T: Clone> ComponentPool<T> {
-    fn new_one(entity_id: usize, component: T) -> Self {
+    fn new_one(entity: Entity, component: T) -> Self {
         // We make room for several extra components to avoid
         // increasing the capacity by 1 over and over
         // and thus causing lots of copying.
-        let mut components = vec![None; 10];
-        components[entity_id] = Some(component);
+        let mut components = vec![(0, None); 10];
+        components[entity.id] = (entity.generation, Some(component));
         Self { components }
     }
 
-    fn get(&self, entity_id: usize) -> Option<&T> {
-        if entity_id >= self.components.len() {
+    fn get(&self, entity: Entity) -> Option<&T> {
+        if entity.id >= self.components.len() {
             return None;
         }
-        self.components[entity_id].as_ref()
+        let generation_component = &self.components[entity.id];
+        if generation_component.0 < entity.generation {
+            return None;
+        }
+        generation_component.1.as_ref()
     }
 
-    fn set(&mut self, entity_id: usize, component: T) {
-        if entity_id >= self.components.len() {
+    fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
+        if entity.id >= self.components.len() {
+            return None;
+        }
+        let mut generation_component = &mut self.components[entity.id];
+        if generation_component.0 < entity.generation {
+            return None;
+        }
+        generation_component.1.as_mut()
+    }
+
+    fn set(&mut self, entity: Entity, component: T) {
+        if entity.id >= self.components.len() {
             // We make room for several extra components to avoid
             // increasing the capacity by 1 over and over
             // and thus causing lots of copying.
-            self.components.resize(entity_id + 10, None);
+            self.components.resize(entity.id + 10, (0, None));
         }
-        self.components[entity_id] = Some(component);
+        self.components[entity.id] = (entity.generation, Some(component));
     }
+}
+
+trait System {
+    fn required_components() -> Vec<std::any::TypeId>;
+    fn run();
 }
 
 struct Registry {
@@ -95,6 +115,7 @@ struct Registry {
     entity_generations: EntityGenerations,
     /// The ComponentPools / Vectors that store components / values.
     component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
+    systems: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
 impl Registry {
@@ -104,6 +125,7 @@ impl Registry {
             free_entity_ids: Vec::new(),
             entity_generations: EntityGenerations::new(),
             component_pools: std::collections::HashMap::new(),
+            systems: std::collections::HashMap::new(),
         }
     }
 
@@ -143,40 +165,60 @@ impl Registry {
         if !self.is_entity_alive(entity) {
             return Err(DeadEntity::DeadEntity);
         }
-        let type_id = (&component as &dyn std::any::Any).type_id();
+        let type_id = std::any::TypeId::of::<T>();
         match self.component_pools.get_mut(&type_id) {
             None => {
-                let new_component_pool =
-                    Box::new(ComponentPool::<T>::new_one(entity.id, component));
+                let new_component_pool = Box::new(ComponentPool::<T>::new_one(entity, component));
                 self.component_pools.insert(type_id, new_component_pool);
             }
             Some(component_pool) => {
                 let component_pool: &mut ComponentPool<T> =
                     (&mut **component_pool).downcast_mut().unwrap();
-                component_pool.set(entity.id, component);
+                component_pool.set(entity, component);
             }
         }
         Ok(())
     }
 
-    fn get_component<T: Clone + 'static>(
-        &mut self,
-        entity: Entity,
-    ) -> Result<Option<&T>, DeadEntity> {
+    fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, DeadEntity> {
         if !self.is_entity_alive(entity) {
             return Err(DeadEntity::DeadEntity);
         }
-        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        let type_id = std::any::TypeId::of::<T>();
+        match self.component_pools.get(&type_id) {
+            None => {
+                return Ok(None);
+            }
+            Some(component_pool) => {
+                let component_pool: &ComponentPool<T> = (&**component_pool).downcast_ref().unwrap();
+                return Ok(component_pool.get(entity));
+            }
+        }
+    }
+
+    fn get_component_mut<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+    ) -> Result<Option<&mut T>, DeadEntity> {
+        if !self.is_entity_alive(entity) {
+            return Err(DeadEntity::DeadEntity);
+        }
+        let type_id = std::any::TypeId::of::<T>();
         match self.component_pools.get_mut(&type_id) {
             None => {
                 return Ok(None);
             }
             Some(component_pool) => {
-                let component_pool: &ComponentPool<T> =
+                let component_pool: &mut ComponentPool<T> =
                     (&mut **component_pool).downcast_mut().unwrap();
-                return Ok(component_pool.get(entity.id));
+                return Ok(component_pool.get_mut(entity));
             }
         }
+    }
+
+    fn add_system<T: System + 'static>(&mut self, system: T) {
+        let type_id = std::any::TypeId::of::<T>();
+        self.systems.insert(type_id, Box::new(system));
     }
 }
 
@@ -226,4 +268,31 @@ fn test_registry_happy_path() {
     registry.add_component(e2, 5_i32).unwrap();
     registry.remove_entity(e2).unwrap();
     assert!(registry.add_component(e2, 5_i32).is_err());
+}
+
+#[test]
+fn test_system_happy_path() {
+    #[derive(Clone)]
+    struct CounterComponent {
+        count: u32,
+    }
+
+    struct CounterIncrementSystem;
+
+    impl System for CounterIncrementSystem {
+        fn required_components() -> Vec<std::any::TypeId> {
+            vec![std::any::TypeId::of::<CounterComponent>()]
+        }
+
+        fn run() {
+            todo!()
+        }
+    }
+
+    let mut registry = Registry::new();
+    let e = registry.create_entity();
+    registry
+        .add_component(e, CounterComponent { count: 0 })
+        .unwrap();
+    registry.add_system(CounterIncrementSystem {});
 }
