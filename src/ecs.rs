@@ -3,10 +3,18 @@ enum DeadEntity {
     DeadEntity,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 struct Entity {
     id: usize,
     generation: usize,
+}
+
+impl Ord for Entity {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id
+            .cmp(&other.id)
+            .then_with(|| self.generation.cmp(&other.generation))
+    }
 }
 
 struct EntityGenerations {
@@ -101,8 +109,45 @@ impl<T: Clone> ComponentPool<T> {
 
 trait System {
     fn required_components() -> Vec<std::any::TypeId>;
-    fn run();
+    fn add_entity(&mut self, entity: Entity);
+    fn remove_entity(&mut self, entit: Entity);
+    fn get_entities(&self) -> Vec<&Entity>;
+    fn run(&self, registry: &mut Registry);
 }
+// TODO: required_components function
+// TODO: matching entities function
+// TODO: run function
+// a system is just a function that receives / queries certain components and alters them
+// a system might store a list of entities that contain the required components
+// what's wrong with just iterating every entity every time?
+// that would require iterating a lot of irrelevant entities
+// we can avoid iterating irrelevant entities by storing entities we know are relevant
+// we can iterate the stored relevant entities in our system code
+// this works for a struct with static / unchanging methods / code
+// how can we have user customizable code that still has access to the list of relevant entities?
+// what do we do with component pools?
+// component pools are different, they store only generic data, just data, no generic code
+// code is just data, at least in some languages, is Rust dynamic enough to treat code as just data?
+// if the system struct stores a Fn, can it call the Fn and pass itself to the Fn?
+// probably, I don't see why not, a impl method would have a mutable share of self,
+// so it could pass self to sub-functions
+// self could be designed to expose some nice APIs that the Fn could use
+// what <T> would the Fn accept though?
+// what is <T> in this System?
+// When the system code calls getEntities, what entities will be returned? That is T.
+// sometimes we'll want one component, sometimes more,
+// I don't think a variable number of components can fit in a single generic T
+// We may have to make System a trait
+// what would we need in a system trait?
+// TODO: required_components function to help the trait sort and assign relevant entities
+// TODO: add_relevant_entity function
+// TODO: remove_relevant_entity function
+// TODO: get_relevant_entities function to be used by the run function
+// TODO: run function to run the system code
+// A type encompasas many values, just data
+// A Fn encompases many values as well, code instead of data
+// To encompass many values / data and code we have to use a trait
+// Our systems will have to have a common trait that exposes the required values / data and code
 
 struct Registry {
     /// The maximum entity id we have issued. This is the "length" of the Registry.
@@ -277,15 +322,41 @@ fn test_system_happy_path() {
         count: u32,
     }
 
-    struct CounterIncrementSystem;
+    struct CounterIncrementSystem {
+        entities: std::collections::BTreeSet<Entity>,
+    }
+
+    impl CounterIncrementSystem {
+        fn new() -> Self {
+            Self {
+                entities: std::collections::BTreeSet::new(),
+            }
+        }
+    }
 
     impl System for CounterIncrementSystem {
         fn required_components() -> Vec<std::any::TypeId> {
             vec![std::any::TypeId::of::<CounterComponent>()]
         }
 
-        fn run() {
-            todo!()
+        fn add_entity(&mut self, entity: Entity) {
+            self.entities.insert(entity);
+        }
+
+        fn remove_entity(&mut self, entity: Entity) {
+            self.entities.remove(&entity);
+        }
+
+        fn get_entities(&self) -> Vec<&Entity> {
+            self.entities.iter().collect()
+        }
+
+        fn run(&self, registry: &mut Registry) {
+            for entity in self.get_entities() {
+                let counter_component: &mut CounterComponent =
+                    registry.get_component_mut(*entity).unwrap().unwrap();
+                counter_component.count += 1;
+            }
         }
     }
 
@@ -294,5 +365,5 @@ fn test_system_happy_path() {
     registry
         .add_component(e, CounterComponent { count: 0 })
         .unwrap();
-    registry.add_system(CounterIncrementSystem {});
+    registry.add_system(CounterIncrementSystem::new());
 }
