@@ -107,11 +107,27 @@ impl<T: Clone> ComponentPool<T> {
     }
 }
 
+struct SystemInput {
+    entities: std::collections::BTreeSet<Entity>,
+}
+
+impl SystemInput {
+    fn new() -> Self {
+        Self {
+            entities: std::collections::BTreeSet::new(),
+        }
+    }
+
+    fn get_entities(&self) -> Vec<&Entity> {
+        self.entities.iter().collect()
+    }
+}
+
 trait System {
-    fn required_components() -> Vec<std::any::TypeId>;
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn required_components(&self) -> Vec<std::any::TypeId>;
     fn add_entity(&mut self, entity: Entity);
     fn remove_entity(&mut self, entit: Entity);
-    fn get_entities(&self) -> Vec<&Entity>;
     fn run(&self, registry: &mut Registry);
 }
 // TODO: required_components function
@@ -160,7 +176,7 @@ struct Registry {
     entity_generations: EntityGenerations,
     /// The ComponentPools / Vectors that store components / values.
     component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
-    systems: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
+    systems: std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
 }
 
 impl Registry {
@@ -265,6 +281,21 @@ impl Registry {
         let type_id = std::any::TypeId::of::<T>();
         self.systems.insert(type_id, Box::new(system));
     }
+
+    fn run_systems(&mut self) {
+        let mut systems = Vec::new();
+        for system in self.systems.values() {
+            let a = system.as_any().downcast_ref::<&dyn System>().unwrap();
+            systems.push(a);
+        }
+        for system in systems {
+            // We can't give an exclusive borrow to the whole struct, because the systems are being iterated.
+            // Our systems would not mutate the systems though, only the components.
+            // We should store the components in a different field than the systems, then we can lend the components
+            // while iterating the systems.
+            system.run(self);
+        }
+    }
 }
 
 #[test]
@@ -332,10 +363,18 @@ fn test_system_happy_path() {
                 entities: std::collections::BTreeSet::new(),
             }
         }
+
+        fn get_entities(&self) -> Vec<&Entity> {
+            self.entities.iter().collect()
+        }
     }
 
     impl System for CounterIncrementSystem {
-        fn required_components() -> Vec<std::any::TypeId> {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn required_components(&self) -> Vec<std::any::TypeId> {
             vec![std::any::TypeId::of::<CounterComponent>()]
         }
 
@@ -345,10 +384,6 @@ fn test_system_happy_path() {
 
         fn remove_entity(&mut self, entity: Entity) {
             self.entities.remove(&entity);
-        }
-
-        fn get_entities(&self) -> Vec<&Entity> {
-            self.entities.iter().collect()
         }
 
         fn run(&self, registry: &mut Registry) {
