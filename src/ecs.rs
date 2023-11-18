@@ -20,50 +20,18 @@ impl Ord for Entity {
     }
 }
 
-struct EntityGenerations {
+struct EntityManager {
+    /// Entity ids that are free to issue again.
+    free_entity_ids: Vec<IndexT>,
+    /// When we need a new entity id, because there are no free entity ids, use this one.
+    next_entity_id: IndexT,
+    /// The current generation of the entities.
+    /// If a given Entity has a generation less than this,
+    /// that Entity is no longer valid.
     generations: Vec<IndexT>,
 }
 
-impl EntityGenerations {
-    fn new() -> Self {
-        Self {
-            generations: Vec::new(),
-        }
-    }
-
-    fn get(&self, entity_id: IndexT) -> IndexT {
-        let entity_id = entity_id as usize;
-        if entity_id >= self.generations.len() {
-            return 0;
-        }
-        self.generations[entity_id]
-    }
-
-    fn increment(&mut self, entity_id: IndexT) -> IndexT {
-        let entity_id = entity_id as usize;
-        if entity_id >= self.generations.len() {
-            // We make room for several extra entity ids to avoid
-            // increasing the capacity by 1 over and over
-            // and thus causing lots of copying.
-            self.generations.resize(entity_id + 10, 0);
-        }
-        debug_assert!(entity_id < self.generations.len());
-        self.generations[entity_id] += 1;
-        self.generations[entity_id]
-    }
-
-    fn is_alive(&self, entity: Entity) -> bool {
-        let entity_id = entity.id as usize;
-        let alive_generation: GenerationT;
-        if entity_id >= self.generations.len() {
-            alive_generation = 0;
-        } else {
-            debug_assert!(entity_id < self.generations.len());
-            alive_generation = self.generations[entity_id];
-        }
-        entity.generation == alive_generation
-    }
-}
+impl EntityManager {}
 
 struct ComponentPool<T: Clone> {
     components: Vec<(IndexT, Option<T>)>,
@@ -113,15 +81,7 @@ impl<T: Clone> ComponentPool<T> {
 }
 
 struct EntityComponentManager {
-    /// Entity ids that are free to issue again.
-    free_entity_ids: Vec<IndexT>,
-    /// When we need a new entity id, because there are no free entity ids, use this one.
-    next_entity_id: IndexT,
-    /// The current generation of the entities.
-    /// If a given Entity has a generation less than this,
-    /// that Entity is no longer valid.
-    entity_generations: EntityGenerations,
-    /// The ComponentPools / Vectors that store components / values.
+    entity: EntityManager,
     component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
