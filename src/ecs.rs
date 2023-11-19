@@ -183,9 +183,34 @@ impl EntityComponentManager {
     }
 }
 
-struct SystemManager {}
+trait System {
+    fn required_components(&self) -> Vec<std::any::TypeId>;
+    fn update_entity(&mut self, entity: Entity, ec_manager: EntityComponentManager);
+    fn run(&self, ec_manager: EntityComponentManager);
+}
 
-impl SystemManager {}
+struct SystemManager {
+    entity_components: EntityComponentManager,
+    systems: std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
+}
+
+impl SystemManager {
+    fn new() -> Self {
+        todo!()
+    }
+
+    fn add_system<T: System>(&mut self, system: T) {
+        todo!()
+    }
+
+    fn remove_system<T: System>(&mut self) {
+        todo!()
+    }
+
+    fn update_entity(&mut self, entity: Entity, ec_manager: EntityComponentManager) {
+        todo!()
+    }
+}
 
 struct Registry {}
 
@@ -250,14 +275,6 @@ fn test_entity_manager_happy_path() {
 //     registry.add_component(e2, 5_i32).unwrap();
 //     registry.remove_entity(e2).unwrap();
 //     assert!(registry.add_component(e2, 5_i32).is_err());
-// }
-//
-// trait System {
-//     fn as_any(&self) -> &dyn std::any::Any;
-//     fn required_components(&self) -> Vec<std::any::TypeId>;
-//     fn add_entity(&mut self, entity: Entity);
-//     fn remove_entity(&mut self, entit: Entity);
-//     fn run(&self, registry: &mut Registry);
 // }
 //
 // struct Registry {
