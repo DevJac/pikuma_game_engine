@@ -1,6 +1,8 @@
 type IndexT = u32;
 type GenerationT = u32;
 
+const VEC_RESIZE_MARGIN: usize = 10;
+
 #[derive(Debug)]
 enum DeadEntity {
     DeadEntity,
@@ -31,7 +33,64 @@ struct EntityManager {
     generations: Vec<IndexT>,
 }
 
-impl EntityManager {}
+impl EntityManager {
+    fn new() -> Self {
+        Self {
+            free_entity_ids: Vec::new(),
+            next_entity_id: 0,
+            generations: Vec::new(),
+        }
+    }
+
+    /// Returns a free entity id if available, otherwise returns the next new entity id.
+    /// Will not alter generations, which should only be altered when removing entities.
+    fn create_entity(&mut self) -> Entity {
+        if let Some(entity_id) = self.free_entity_ids.pop() {
+            return Entity {
+                id: entity_id,
+                generation: self.alive_generation(entity_id),
+            };
+        }
+        let result = Entity {
+            id: self.next_entity_id,
+            generation: self.alive_generation(self.next_entity_id),
+        };
+        self.next_entity_id += 1;
+        result
+    }
+
+    /// Removes entity by incrementing the generation.
+    /// Stores free entity id to be reused.
+    /// Returns an Err Result if entity already removed / dead.
+    fn remove_entity(&mut self, entity: Entity) -> Result<(), DeadEntity> {
+        if self.is_dead(entity) {
+            return Err(DeadEntity::DeadEntity);
+        }
+        let entity_id = entity.id as usize;
+        if entity_id >= self.generations.len() {
+            self.generations.resize(entity_id + VEC_RESIZE_MARGIN, 0);
+        }
+        self.free_entity_ids.push(entity.id);
+        self.generations[entity_id] += 1;
+        Ok(())
+    }
+
+    fn is_alive(&self, entity: Entity) -> bool {
+        entity.generation == self.alive_generation(entity.id)
+    }
+
+    fn is_dead(&self, entity: Entity) -> bool {
+        entity.generation != self.alive_generation(entity.id)
+    }
+
+    fn alive_generation(&self, entity_id: IndexT) -> GenerationT {
+        let entity_id = entity_id as usize;
+        if entity_id >= self.generations.len() {
+            return 0;
+        }
+        self.generations[entity_id]
+    }
+}
 
 struct ComponentPool<T: Clone> {
     components: Vec<(IndexT, Option<T>)>,
@@ -74,7 +133,8 @@ impl<T: Clone> ComponentPool<T> {
             // We make room for several extra components to avoid
             // increasing the capacity by 1 over and over
             // and thus causing lots of copying.
-            self.components.resize((entity.id + 10) as usize, (0, None));
+            self.components
+                .resize(entity.id as usize + VEC_RESIZE_MARGIN, (0, None));
         }
         self.components[entity.id as usize] = (entity.generation, Some(component));
     }
@@ -95,6 +155,85 @@ struct Registry {}
 
 impl Registry {}
 
+#[test]
+fn test_entity_manager_happy_path() {
+    let mut em = EntityManager::new();
+
+    let e0: Entity = em.create_entity();
+    let e1: Entity = em.create_entity();
+    let e2: Entity = em.create_entity();
+
+    assert_eq!(e0.id, 0);
+    assert_eq!(e1.id, 1);
+    assert_eq!(e2.id, 2);
+
+    assert!(em.is_alive(e0));
+    assert!(em.is_alive(e1));
+    assert!(em.is_alive(e2));
+    em.remove_entity(e1).unwrap();
+    assert!(em.is_alive(e0));
+    assert!(!em.is_alive(e1));
+    assert!(em.is_alive(e2));
+
+    assert!(em.remove_entity(e1).is_err());
+
+    let e3: Entity = em.create_entity();
+    assert_eq!(e3.id, 1);
+    assert!(em.is_alive(e0));
+    assert!(!em.is_alive(e1));
+    assert!(em.is_alive(e2));
+    assert!(em.is_alive(e3));
+
+    assert!(em.remove_entity(e1).is_err());
+}
+
+// #[test]
+// fn test_entity_generations_happy_path() {
+//     let mut em = EntityManager::new();
+//     assert_eq!(em.get(0), 0);
+//     assert_eq!(em.get(1), 0);
+//     assert_eq!(em.get(10), 0);
+//     assert_eq!(em.get(5), 0);
+//     em.increment(5);
+//     em.increment(1);
+//     assert_eq!(em.get(0), 0);
+//     assert_eq!(em.get(1), 1);
+//     assert_eq!(em.get(10), 0);
+//     assert_eq!(em.get(5), 1);
+//
+//     let mut em = EntityManager::new();
+//     assert_eq!(em.get(100), 0);
+//     em.increment(100);
+//     assert_eq!(em.get(100), 1);
+// }
+//
+// #[test]
+// fn test_registry_happy_path() {
+//     let mut registry: Registry = Registry::new();
+//     let e0: Entity = registry.create_entity();
+//     let e1: Entity = registry.create_entity();
+//
+//     let e2: Entity = registry.create_entity();
+//     registry.add_component(e2, 5_i32).unwrap();
+//     assert_eq!(registry.get_component::<i32>(e2).unwrap().unwrap(), &5_i32);
+//     registry.remove_entity(e2).unwrap();
+//     let e2: Entity = registry.create_entity();
+//     assert_eq!(registry.get_component::<i32>(e2).unwrap(), None);
+//
+//     assert_eq!(registry.next_entity_id, 3);
+//     registry.remove_entity(e0).unwrap();
+//     registry.remove_entity(e1).unwrap();
+//     assert_eq!(registry.next_entity_id, 3);
+//     let _e0: Entity = registry.create_entity();
+//     let _e1: Entity = registry.create_entity();
+//     assert_eq!(registry.next_entity_id, 3);
+//     let _e3: Entity = registry.create_entity();
+//     assert_eq!(registry.next_entity_id, 4);
+//
+//     registry.add_component(e2, 5_i32).unwrap();
+//     registry.remove_entity(e2).unwrap();
+//     assert!(registry.add_component(e2, 5_i32).is_err());
+// }
 //
 // trait System {
 //     fn as_any(&self) -> &dyn std::any::Any;
@@ -235,109 +374,4 @@ impl Registry {}
 //             system.run(self);
 //         }
 //     }
-// }
-//
-// #[test]
-// fn test_entity_generations_happy_path() {
-//     let mut eg = EntityGenerations::new();
-//     assert_eq!(eg.get(0), 0);
-//     assert_eq!(eg.get(1), 0);
-//     assert_eq!(eg.get(10), 0);
-//     assert_eq!(eg.get(5), 0);
-//     eg.increment(5);
-//     eg.increment(1);
-//     assert_eq!(eg.get(0), 0);
-//     assert_eq!(eg.get(1), 1);
-//     assert_eq!(eg.get(10), 0);
-//     assert_eq!(eg.get(5), 1);
-//
-//     let mut eg = EntityGenerations::new();
-//     assert_eq!(eg.get(100), 0);
-//     eg.increment(100);
-//     assert_eq!(eg.get(100), 1);
-// }
-//
-// #[test]
-// fn test_registry_happy_path() {
-//     let mut registry: Registry = Registry::new();
-//     let e0: Entity = registry.create_entity();
-//     let e1: Entity = registry.create_entity();
-//
-//     let e2: Entity = registry.create_entity();
-//     registry.add_component(e2, 5_i32).unwrap();
-//     assert_eq!(registry.get_component::<i32>(e2).unwrap().unwrap(), &5_i32);
-//     registry.remove_entity(e2).unwrap();
-//     let e2: Entity = registry.create_entity();
-//     assert_eq!(registry.get_component::<i32>(e2).unwrap(), None);
-//
-//     assert_eq!(registry.next_entity_id, 3);
-//     registry.remove_entity(e0).unwrap();
-//     registry.remove_entity(e1).unwrap();
-//     assert_eq!(registry.next_entity_id, 3);
-//     let _e0: Entity = registry.create_entity();
-//     let _e1: Entity = registry.create_entity();
-//     assert_eq!(registry.next_entity_id, 3);
-//     let _e3: Entity = registry.create_entity();
-//     assert_eq!(registry.next_entity_id, 4);
-//
-//     registry.add_component(e2, 5_i32).unwrap();
-//     registry.remove_entity(e2).unwrap();
-//     assert!(registry.add_component(e2, 5_i32).is_err());
-// }
-//
-// #[test]
-// fn test_system_happy_path() {
-//     #[derive(Clone)]
-//     struct CounterComponent {
-//         count: u32,
-//     }
-//
-//     struct CounterIncrementSystem {
-//         entities: std::collections::BTreeSet<Entity>,
-//     }
-//
-//     impl CounterIncrementSystem {
-//         fn new() -> Self {
-//             Self {
-//                 entities: std::collections::BTreeSet::new(),
-//             }
-//         }
-//
-//         fn get_entities(&self) -> Vec<&Entity> {
-//             self.entities.iter().collect()
-//         }
-//     }
-//
-//     impl System for CounterIncrementSystem {
-//         fn as_any(&self) -> &dyn std::any::Any {
-//             self
-//         }
-//
-//         fn required_components(&self) -> Vec<std::any::TypeId> {
-//             vec![std::any::TypeId::of::<CounterComponent>()]
-//         }
-//
-//         fn add_entity(&mut self, entity: Entity) {
-//             self.entities.insert(entity);
-//         }
-//
-//         fn remove_entity(&mut self, entity: Entity) {
-//             self.entities.remove(&entity);
-//         }
-//
-//         fn run(&self, registry: &mut Registry) {
-//             for entity in self.get_entities() {
-//                 let counter_component: &mut CounterComponent =
-//                     registry.get_component_mut(*entity).unwrap().unwrap();
-//                 counter_component.count += 1;
-//             }
-//         }
-//     }
-//
-//     let mut registry = Registry::new();
-//     let e = registry.create_entity();
-//     registry
-//         .add_component(e, CounterComponent { count: 0 })
-//         .unwrap();
-//     registry.add_system(CounterIncrementSystem::new());
 // }
