@@ -101,7 +101,7 @@ impl<T: Clone> ComponentPool<T> {
         // We make room for several extra components to avoid
         // increasing the capacity by 1 over and over
         // and thus causing lots of copying.
-        let mut components = vec![(0, None); 10];
+        let mut components = vec![(0, None); VEC_RESIZE_MARGIN];
         components[entity.id as usize] = (entity.generation, Some(component));
         Self { components }
     }
@@ -145,7 +145,43 @@ struct EntityComponentManager {
     component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
-impl EntityComponentManager {}
+impl EntityComponentManager {
+    fn new() -> Self {
+        todo!()
+    }
+
+    fn create_entity(&mut self) -> Entity {
+        todo!()
+    }
+
+    fn remove_entity(&mut self) -> Result<(), DeadEntity> {
+        todo!()
+    }
+
+    fn is_alive(&self, entity: Entity) -> bool {
+        todo!()
+    }
+
+    fn is_dead(&self, entity: Entity) -> bool {
+        todo!()
+    }
+
+    fn add_component<T>(&mut self, entity: Entity, component: T) -> Result<(), DeadEntity> {
+        todo!()
+    }
+
+    fn remove_component<T>(&mut self, entity: Entity) -> Result<(), DeadEntity> {
+        todo!()
+    }
+
+    fn get_component<T>(&self, entity: Entity) -> Result<Option<&T>, DeadEntity> {
+        todo!()
+    }
+
+    fn get_component_mut<T>(&mut self, entity: Entity) -> Result<Option<&mut T>, DeadEntity> {
+        todo!()
+    }
+}
 
 struct SystemManager {}
 
@@ -187,25 +223,6 @@ fn test_entity_manager_happy_path() {
     assert!(em.remove_entity(e1).is_err());
 }
 
-// #[test]
-// fn test_entity_generations_happy_path() {
-//     let mut em = EntityManager::new();
-//     assert_eq!(em.get(0), 0);
-//     assert_eq!(em.get(1), 0);
-//     assert_eq!(em.get(10), 0);
-//     assert_eq!(em.get(5), 0);
-//     em.increment(5);
-//     em.increment(1);
-//     assert_eq!(em.get(0), 0);
-//     assert_eq!(em.get(1), 1);
-//     assert_eq!(em.get(10), 0);
-//     assert_eq!(em.get(5), 1);
-//
-//     let mut em = EntityManager::new();
-//     assert_eq!(em.get(100), 0);
-//     em.increment(100);
-//     assert_eq!(em.get(100), 1);
-// }
 //
 // #[test]
 // fn test_registry_happy_path() {
