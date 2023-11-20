@@ -253,8 +253,8 @@ impl EntityComponentManager {
 
 trait System {
     fn required_components(&self) -> Vec<std::any::TypeId>;
-    fn update_entity(&mut self, entity: Entity, ec_manager: EntityComponentManager);
-    fn run(&self, ec_manager: EntityComponentManager);
+    fn update_entity(&mut self, entity: Entity, ec_manager: &mut EntityComponentManager);
+    fn run(&self, ec_manager: &mut EntityComponentManager);
 }
 
 struct SystemManager {
@@ -264,19 +264,32 @@ struct SystemManager {
 
 impl SystemManager {
     fn new() -> Self {
-        todo!()
+        Self {
+            entity_components: EntityComponentManager::new(),
+            systems: std::collections::HashMap::new(),
+        }
     }
 
-    fn add_system<T: System>(&mut self, system: T) {
-        todo!()
+    fn add_system<T: System + 'static>(&mut self, system: T) {
+        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        self.systems.insert(type_id, Box::new(system));
     }
 
-    fn remove_system<T: System>(&mut self) {
-        todo!()
+    fn remove_system<T: System + 'static>(&mut self) {
+        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        self.systems.remove(&type_id);
     }
 
-    fn update_entity(&mut self, entity: Entity, ec_manager: EntityComponentManager) {
-        todo!()
+    fn update_entity(&mut self, entity: Entity) {
+        for system in self.systems.values_mut() {
+            system.update_entity(entity, &mut self.entity_components);
+        }
+    }
+
+    fn run_systems(&mut self) {
+        for system in self.systems.values() {
+            system.run(&mut self.entity_components);
+        }
     }
 }
 
@@ -367,93 +380,6 @@ fn test_entity_manager_happy_path() {
 //             entity_generations: EntityGenerations::new(),
 //             component_pools: std::collections::HashMap::new(),
 //             systems: std::collections::HashMap::new(),
-//         }
-//     }
-//
-//     fn create_entity(&mut self) -> Entity {
-//         if let Some(entity_id) = self.free_entity_ids.pop() {
-//             return Entity {
-//                 id: entity_id,
-//                 generation: self.entity_generations.get(entity_id),
-//             };
-//         }
-//         let new_entity = Entity {
-//             id: self.next_entity_id,
-//             generation: 0,
-//         };
-//         self.next_entity_id += 1;
-//         new_entity
-//     }
-//
-//     fn is_entity_alive(&self, entity: Entity) -> bool {
-//         self.entity_generations.is_alive(entity)
-//     }
-//
-//     fn remove_entity(&mut self, entity: Entity) -> Result<(), DeadEntity> {
-//         if !self.is_entity_alive(entity) {
-//             return Err(DeadEntity::DeadEntity);
-//         }
-//         self.entity_generations.increment(entity.id);
-//         self.free_entity_ids.push(entity.id);
-//         Ok(())
-//     }
-//
-//     fn add_component<T: Clone + 'static>(
-//         &mut self,
-//         entity: Entity,
-//         component: T,
-//     ) -> Result<(), DeadEntity> {
-//         if !self.is_entity_alive(entity) {
-//             return Err(DeadEntity::DeadEntity);
-//         }
-//         let type_id = std::any::TypeId::of::<T>();
-//         match self.component_pools.get_mut(&type_id) {
-//             None => {
-//                 let new_component_pool = Box::new(ComponentPool::<T>::new_one(entity, component));
-//                 self.component_pools.insert(type_id, new_component_pool);
-//             }
-//             Some(component_pool) => {
-//                 let component_pool: &mut ComponentPool<T> =
-//                     (&mut **component_pool).downcast_mut().unwrap();
-//                 component_pool.set(entity, component);
-//             }
-//         }
-//         Ok(())
-//     }
-//
-//     fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, DeadEntity> {
-//         if !self.is_entity_alive(entity) {
-//             return Err(DeadEntity::DeadEntity);
-//         }
-//         let type_id = std::any::TypeId::of::<T>();
-//         match self.component_pools.get(&type_id) {
-//             None => {
-//                 return Ok(None);
-//             }
-//             Some(component_pool) => {
-//                 let component_pool: &ComponentPool<T> = (&**component_pool).downcast_ref().unwrap();
-//                 return Ok(component_pool.get(entity));
-//             }
-//         }
-//     }
-//
-//     fn get_component_mut<T: Clone + 'static>(
-//         &mut self,
-//         entity: Entity,
-//     ) -> Result<Option<&mut T>, DeadEntity> {
-//         if !self.is_entity_alive(entity) {
-//             return Err(DeadEntity::DeadEntity);
-//         }
-//         let type_id = std::any::TypeId::of::<T>();
-//         match self.component_pools.get_mut(&type_id) {
-//             None => {
-//                 return Ok(None);
-//             }
-//             Some(component_pool) => {
-//                 let component_pool: &mut ComponentPool<T> =
-//                     (&mut **component_pool).downcast_mut().unwrap();
-//                 return Ok(component_pool.get_mut(entity));
-//             }
 //         }
 //     }
 //
