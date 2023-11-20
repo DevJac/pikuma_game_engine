@@ -9,7 +9,7 @@ enum EcsError {
     NoSuchComponent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 struct Entity {
     id: IndexT,
     generation: GenerationT,
@@ -150,6 +150,8 @@ impl<T: Clone> ComponentPool<T> {
 
 struct EntityComponentManager {
     entity_manager: EntityManager,
+    entity_components:
+        std::collections::HashMap<Entity, std::collections::HashSet<std::any::TypeId>>,
     component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
@@ -157,15 +159,20 @@ impl EntityComponentManager {
     fn new() -> Self {
         Self {
             entity_manager: EntityManager::new(),
+            entity_components: std::collections::HashMap::new(),
             component_pools: std::collections::HashMap::new(),
         }
     }
 
     fn create_entity(&mut self) -> Entity {
-        self.entity_manager.create_entity()
+        let new_entity = self.entity_manager.create_entity();
+        self.entity_components
+            .insert(new_entity, std::collections::HashSet::new());
+        new_entity
     }
 
     fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
+        self.entity_components.remove(&entity);
         self.entity_manager.remove_entity(entity)
     }
 
@@ -186,6 +193,10 @@ impl EntityComponentManager {
             return Err(EcsError::DeadEntity);
         }
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        self.entity_components
+            .get_mut(&entity)
+            .unwrap()
+            .insert(type_id);
         match self.component_pools.get_mut(&type_id) {
             None => {
                 let new_component_pool = Box::new(ComponentPool::new_one(entity, component));
@@ -205,6 +216,10 @@ impl EntityComponentManager {
             return Err(EcsError::DeadEntity);
         }
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        self.entity_components
+            .get_mut(&entity)
+            .unwrap()
+            .remove(&type_id);
         match self.component_pools.get_mut(&type_id) {
             None => {
                 return Err(EcsError::NoSuchComponent);
@@ -249,25 +264,75 @@ impl EntityComponentManager {
             }
         }
     }
+
+    fn get_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
+        self.entity_components.get(&entity).unwrap()
+    }
 }
 
 trait System {
-    fn required_components(&self) -> Vec<std::any::TypeId>;
-    fn update_entity(&mut self, entity: Entity, ec_manager: &mut EntityComponentManager);
+    fn required_components() -> std::collections::HashSet<std::any::TypeId>
+    where
+        Self: Sized;
+    fn add_entity(&mut self, entity: Entity);
+    fn remove_entity(&mut self, entity: Entity);
     fn run(&self, ec_manager: &mut EntityComponentManager);
 }
 
-struct SystemManager {
-    entity_components: EntityComponentManager,
+struct Registry {
+    ec_manager: EntityComponentManager,
     systems: std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
 }
 
-impl SystemManager {
+impl Registry {
     fn new() -> Self {
         Self {
-            entity_components: EntityComponentManager::new(),
+            ec_manager: EntityComponentManager::new(),
             systems: std::collections::HashMap::new(),
         }
+    }
+
+    fn create_entity(&mut self) -> Entity {
+        // TODO: Consider how this affects systems.
+        self.ec_manager.create_entity()
+    }
+
+    fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
+        // TODO: Consider how this affects systems.
+        self.ec_manager.remove_entity(entity)
+    }
+
+    fn is_alive(&self, entity: Entity) -> bool {
+        self.ec_manager.is_alive(entity)
+    }
+
+    fn is_dead(&self, entity: Entity) -> bool {
+        self.ec_manager.is_dead(entity)
+    }
+
+    fn add_component<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+        component: T,
+    ) -> Result<(), EcsError> {
+        // TODO: Consider how this affects systems.
+        self.ec_manager.add_component(entity, component)
+    }
+
+    fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
+        // TODO: Consider how this affects systems.
+        self.ec_manager.remove_component::<T>(entity)
+    }
+
+    fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, EcsError> {
+        self.ec_manager.get_component(entity)
+    }
+
+    fn get_component_mut<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+    ) -> Result<Option<&mut T>, EcsError> {
+        self.ec_manager.get_component_mut(entity)
     }
 
     fn add_system<T: System + 'static>(&mut self, system: T) {
@@ -280,22 +345,12 @@ impl SystemManager {
         self.systems.remove(&type_id);
     }
 
-    fn update_entity(&mut self, entity: Entity) {
-        for system in self.systems.values_mut() {
-            system.update_entity(entity, &mut self.entity_components);
-        }
-    }
-
     fn run_systems(&mut self) {
         for system in self.systems.values() {
-            system.run(&mut self.entity_components);
+            system.run(&mut self.ec_manager);
         }
     }
 }
-
-struct Registry {}
-
-impl Registry {}
 
 #[test]
 fn test_entity_manager_happy_path() {
