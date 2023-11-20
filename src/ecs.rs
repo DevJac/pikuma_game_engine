@@ -265,15 +265,13 @@ impl EntityComponentManager {
         }
     }
 
-    fn get_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
+    fn has_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
         self.entity_components.get(&entity).unwrap()
     }
 }
 
 trait System {
-    fn required_components() -> std::collections::HashSet<std::any::TypeId>
-    where
-        Self: Sized;
+    fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId>;
     fn add_entity(&mut self, entity: Entity);
     fn remove_entity(&mut self, entity: Entity);
     fn run(&self, ec_manager: &mut EntityComponentManager);
@@ -293,12 +291,14 @@ impl Registry {
     }
 
     fn create_entity(&mut self) -> Entity {
-        // TODO: Consider how this affects systems.
+        // Because a new entity has no components, no systems will be interested in it.
         self.ec_manager.create_entity()
     }
 
     fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
-        // TODO: Consider how this affects systems.
+        for system in self.systems.values_mut() {
+            system.remove_entity(entity);
+        }
         self.ec_manager.remove_entity(entity)
     }
 
@@ -315,13 +315,35 @@ impl Registry {
         entity: Entity,
         component: T,
     ) -> Result<(), EcsError> {
-        // TODO: Consider how this affects systems.
-        self.ec_manager.add_component(entity, component)
+        let result = self.ec_manager.add_component(entity, component);
+        if result.is_ok() {
+            for system in self.systems.values_mut() {
+                if self
+                    .ec_manager
+                    .has_components(entity)
+                    .is_superset(system.required_components())
+                {
+                    system.add_entity(entity);
+                }
+            }
+        }
+        result
     }
 
     fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
-        // TODO: Consider how this affects systems.
-        self.ec_manager.remove_component::<T>(entity)
+        let result = self.ec_manager.remove_component::<T>(entity);
+        if result.is_ok() {
+            for system in self.systems.values_mut() {
+                if self
+                    .ec_manager
+                    .has_components(entity)
+                    .is_superset(system.required_components())
+                {
+                    system.remove_entity(entity);
+                }
+            }
+        }
+        result
     }
 
     fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, EcsError> {
