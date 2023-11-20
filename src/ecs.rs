@@ -4,8 +4,9 @@ type GenerationT = u32;
 const VEC_RESIZE_MARGIN: usize = 10;
 
 #[derive(Debug)]
-enum DeadEntity {
+enum EcsError {
     DeadEntity,
+    NoSuchComponent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
@@ -62,9 +63,9 @@ impl EntityManager {
     /// Removes entity by incrementing the generation.
     /// Stores free entity id to be reused.
     /// Returns an Err Result if entity already removed / dead.
-    fn remove_entity(&mut self, entity: Entity) -> Result<(), DeadEntity> {
+    fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
         if self.is_dead(entity) {
-            return Err(DeadEntity::DeadEntity);
+            return Err(EcsError::DeadEntity);
         }
         let entity_id = entity.id as usize;
         if entity_id >= self.generations.len() {
@@ -138,48 +139,115 @@ impl<T: Clone> ComponentPool<T> {
         }
         self.components[entity.id as usize] = (entity.generation, Some(component));
     }
+
+    fn remove(&mut self, entity: Entity) {
+        if entity.id as usize >= self.components.len() {
+            return;
+        }
+        self.components[entity.id as usize] = (entity.generation, None);
+    }
 }
 
 struct EntityComponentManager {
-    entity: EntityManager,
+    entity_manager: EntityManager,
     component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
 impl EntityComponentManager {
     fn new() -> Self {
-        todo!()
+        Self {
+            entity_manager: EntityManager::new(),
+            component_pools: std::collections::HashMap::new(),
+        }
     }
 
     fn create_entity(&mut self) -> Entity {
-        todo!()
+        self.entity_manager.create_entity()
     }
 
-    fn remove_entity(&mut self) -> Result<(), DeadEntity> {
-        todo!()
+    fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
+        self.entity_manager.remove_entity(entity)
     }
 
     fn is_alive(&self, entity: Entity) -> bool {
-        todo!()
+        self.entity_manager.is_alive(entity)
     }
 
     fn is_dead(&self, entity: Entity) -> bool {
-        todo!()
+        self.entity_manager.is_dead(entity)
     }
 
-    fn add_component<T>(&mut self, entity: Entity, component: T) -> Result<(), DeadEntity> {
-        todo!()
+    fn add_component<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+        component: T,
+    ) -> Result<(), EcsError> {
+        if self.entity_manager.is_dead(entity) {
+            return Err(EcsError::DeadEntity);
+        }
+        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        match self.component_pools.get_mut(&type_id) {
+            None => {
+                let new_component_pool = Box::new(ComponentPool::new_one(entity, component));
+                self.component_pools.insert(type_id, new_component_pool);
+            }
+            Some(component_pool) => {
+                let component_pool: &mut ComponentPool<T> =
+                    (&mut **component_pool).downcast_mut().unwrap();
+                component_pool.set(entity, component);
+            }
+        }
+        Ok(())
     }
 
-    fn remove_component<T>(&mut self, entity: Entity) -> Result<(), DeadEntity> {
-        todo!()
+    fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
+        if self.entity_manager.is_dead(entity) {
+            return Err(EcsError::DeadEntity);
+        }
+        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        match self.component_pools.get_mut(&type_id) {
+            None => {
+                return Err(EcsError::NoSuchComponent);
+            }
+            Some(component_pool) => {
+                let component_pool: &mut ComponentPool<T> =
+                    (&mut **component_pool).downcast_mut().unwrap();
+                component_pool.remove(entity);
+            }
+        }
+        Ok(())
     }
 
-    fn get_component<T>(&self, entity: Entity) -> Result<Option<&T>, DeadEntity> {
-        todo!()
+    fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, EcsError> {
+        if self.entity_manager.is_dead(entity) {
+            return Err(EcsError::DeadEntity);
+        }
+        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        match self.component_pools.get(&type_id) {
+            None => Err(EcsError::NoSuchComponent),
+            Some(component_pool) => {
+                let component_pool: &ComponentPool<T> = (&**component_pool).downcast_ref().unwrap();
+                Ok(component_pool.get(entity))
+            }
+        }
     }
 
-    fn get_component_mut<T>(&mut self, entity: Entity) -> Result<Option<&mut T>, DeadEntity> {
-        todo!()
+    fn get_component_mut<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+    ) -> Result<Option<&mut T>, EcsError> {
+        if self.entity_manager.is_dead(entity) {
+            return Err(EcsError::DeadEntity);
+        }
+        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        match self.component_pools.get_mut(&type_id) {
+            None => Err(EcsError::NoSuchComponent),
+            Some(component_pool) => {
+                let component_pool: &mut ComponentPool<T> =
+                    (&mut **component_pool).downcast_mut().unwrap();
+                Ok(component_pool.get_mut(entity))
+            }
+        }
     }
 }
 
