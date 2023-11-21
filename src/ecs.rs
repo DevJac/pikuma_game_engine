@@ -268,6 +268,12 @@ impl EntityComponentManager {
     fn has_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
         self.entity_components.get(&entity).unwrap()
     }
+
+    fn entities_and_components(
+        &self,
+    ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
+        self.entity_components.iter()
+    }
 }
 
 trait System {
@@ -357,7 +363,12 @@ impl Registry {
         self.ec_manager.get_component_mut(entity)
     }
 
-    fn add_system<T: System + 'static>(&mut self, system: T) {
+    fn add_system<T: System + 'static>(&mut self, mut system: T) {
+        for (entity, components) in self.ec_manager.entities_and_components() {
+            if components.is_superset(system.required_components()) {
+                system.add_entity(*entity);
+            }
+        }
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
         self.systems.insert(type_id, Box::new(system));
     }
@@ -374,109 +385,147 @@ impl Registry {
     }
 }
 
-#[test]
-fn test_entity_manager_happy_path() {
-    let mut em = EntityManager::new();
+#[cfg(test)]
+mod tests {
+    use super::{Entity, EntityComponentManager, EntityManager, Registry, System};
 
-    let e0: Entity = em.create_entity();
-    let e1: Entity = em.create_entity();
-    let e2: Entity = em.create_entity();
+    #[test]
+    fn test_entity_manager_happy_path() {
+        let mut em = EntityManager::new();
 
-    assert_eq!(e0.id, 0);
-    assert_eq!(e1.id, 1);
-    assert_eq!(e2.id, 2);
+        let e0: Entity = em.create_entity();
+        let e1: Entity = em.create_entity();
+        let e2: Entity = em.create_entity();
 
-    assert!(em.is_alive(e0));
-    assert!(em.is_alive(e1));
-    assert!(em.is_alive(e2));
-    em.remove_entity(e1).unwrap();
-    assert!(em.is_alive(e0));
-    assert!(!em.is_alive(e1));
-    assert!(em.is_alive(e2));
+        assert_eq!(e0.id, 0);
+        assert_eq!(e1.id, 1);
+        assert_eq!(e2.id, 2);
 
-    assert!(em.remove_entity(e1).is_err());
+        assert!(em.is_alive(e0));
+        assert!(em.is_alive(e1));
+        assert!(em.is_alive(e2));
+        em.remove_entity(e1).unwrap();
+        assert!(em.is_alive(e0));
+        assert!(em.is_dead(e1));
+        assert!(em.is_alive(e2));
 
-    let e3: Entity = em.create_entity();
-    assert_eq!(e3.id, 1);
-    assert!(em.is_alive(e0));
-    assert!(!em.is_alive(e1));
-    assert!(em.is_alive(e2));
-    assert!(em.is_alive(e3));
+        assert!(em.remove_entity(e1).is_err());
 
-    assert!(em.remove_entity(e1).is_err());
+        let e3: Entity = em.create_entity();
+        assert_eq!(e3.id, 1);
+        assert!(em.is_alive(e0));
+        assert!(em.is_dead(e1));
+        assert!(em.is_alive(e2));
+        assert!(em.is_alive(e3));
+
+        assert!(em.remove_entity(e1).is_err());
+    }
+
+    #[test]
+    fn test_registry_happy_path() {
+        let mut registry: Registry = Registry::new();
+        let e0: Entity = registry.create_entity();
+        let e1: Entity = registry.create_entity();
+
+        let e2: Entity = registry.create_entity();
+        registry.add_component(e2, 5_i32).unwrap();
+        assert_eq!(registry.get_component::<i32>(e2).unwrap().unwrap(), &5_i32);
+        registry.remove_entity(e2).unwrap();
+        assert!(registry.get_component::<i32>(e2).is_err());
+        let e2: Entity = registry.create_entity();
+        assert_eq!(registry.get_component::<i32>(e2).unwrap(), None);
+
+        assert_eq!(registry.ec_manager.entity_manager.next_entity_id, 3);
+        registry.remove_entity(e0).unwrap();
+        registry.remove_entity(e1).unwrap();
+        assert_eq!(registry.ec_manager.entity_manager.next_entity_id, 3);
+        let _e0: Entity = registry.create_entity();
+        let _e1: Entity = registry.create_entity();
+        assert_eq!(registry.ec_manager.entity_manager.next_entity_id, 3);
+        let _e3: Entity = registry.create_entity();
+        assert_eq!(registry.ec_manager.entity_manager.next_entity_id, 4);
+
+        registry.add_component(e2, 5_i32).unwrap();
+        registry.remove_entity(e2).unwrap();
+        assert!(registry.add_component(e2, 5_i32).is_err());
+    }
+
+    #[derive(Clone)]
+    struct CounterComponent {
+        count: u32,
+    }
+
+    struct CounterIncrementSystem {
+        required_components: std::collections::HashSet<std::any::TypeId>,
+        entities: std::collections::HashSet<Entity>,
+    }
+
+    impl CounterIncrementSystem {
+        fn new() -> Self {
+            let mut required_components = std::collections::HashSet::new();
+            required_components.insert(std::any::TypeId::of::<CounterComponent>());
+            Self {
+                required_components,
+                entities: std::collections::HashSet::new(),
+            }
+        }
+    }
+
+    impl System for CounterIncrementSystem {
+        fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
+            &self.required_components
+        }
+
+        fn add_entity(&mut self, entity: Entity) {
+            self.entities.insert(entity);
+        }
+
+        fn remove_entity(&mut self, entity: Entity) {
+            self.entities.remove(&entity);
+        }
+
+        fn run(&self, ec_manager: &mut EntityComponentManager) {
+            for entity in self.entities.iter() {
+                let counter_component: &mut CounterComponent =
+                    ec_manager.get_component_mut(*entity).unwrap().unwrap();
+                counter_component.count += 1;
+            }
+        }
+    }
+
+    #[test]
+    fn test_system_happy_path() {
+        let mut registry = Registry::new();
+        let e = registry.create_entity();
+        registry
+            .add_component(e, CounterComponent { count: 0 })
+            .unwrap();
+        registry.add_system(CounterIncrementSystem::new());
+        assert_eq!(
+            registry
+                .get_component::<CounterComponent>(e)
+                .unwrap()
+                .unwrap()
+                .count,
+            0
+        );
+        registry.run_systems();
+        assert_eq!(
+            registry
+                .get_component::<CounterComponent>(e)
+                .unwrap()
+                .unwrap()
+                .count,
+            1
+        );
+        registry.run_systems();
+        assert_eq!(
+            registry
+                .get_component::<CounterComponent>(e)
+                .unwrap()
+                .unwrap()
+                .count,
+            2
+        );
+    }
 }
-
-//
-// #[test]
-// fn test_registry_happy_path() {
-//     let mut registry: Registry = Registry::new();
-//     let e0: Entity = registry.create_entity();
-//     let e1: Entity = registry.create_entity();
-//
-//     let e2: Entity = registry.create_entity();
-//     registry.add_component(e2, 5_i32).unwrap();
-//     assert_eq!(registry.get_component::<i32>(e2).unwrap().unwrap(), &5_i32);
-//     registry.remove_entity(e2).unwrap();
-//     let e2: Entity = registry.create_entity();
-//     assert_eq!(registry.get_component::<i32>(e2).unwrap(), None);
-//
-//     assert_eq!(registry.next_entity_id, 3);
-//     registry.remove_entity(e0).unwrap();
-//     registry.remove_entity(e1).unwrap();
-//     assert_eq!(registry.next_entity_id, 3);
-//     let _e0: Entity = registry.create_entity();
-//     let _e1: Entity = registry.create_entity();
-//     assert_eq!(registry.next_entity_id, 3);
-//     let _e3: Entity = registry.create_entity();
-//     assert_eq!(registry.next_entity_id, 4);
-//
-//     registry.add_component(e2, 5_i32).unwrap();
-//     registry.remove_entity(e2).unwrap();
-//     assert!(registry.add_component(e2, 5_i32).is_err());
-// }
-//
-// struct Registry {
-//     /// The maximum entity id we have issued. This is the "length" of the Registry.
-//     next_entity_id: usize,
-//     /// Entity ids that are free to issue again.
-//     free_entity_ids: Vec<usize>,
-//     /// The current generation of the entities.
-//     /// If a given Entity has a generation less than this,
-//     /// that Entity is no longer valid.
-//     entity_generations: EntityGenerations,
-//     /// The ComponentPools / Vectors that store components / values.
-//     component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
-//     systems: std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
-// }
-//
-// impl Registry {
-//     fn new() -> Self {
-//         Self {
-//             next_entity_id: 0,
-//             free_entity_ids: Vec::new(),
-//             entity_generations: EntityGenerations::new(),
-//             component_pools: std::collections::HashMap::new(),
-//             systems: std::collections::HashMap::new(),
-//         }
-//     }
-//
-//     fn add_system<T: System + 'static>(&mut self, system: T) {
-//         let type_id = std::any::TypeId::of::<T>();
-//         self.systems.insert(type_id, Box::new(system));
-//     }
-//
-//     fn run_systems(&mut self) {
-//         let mut systems = Vec::new();
-//         for system in self.systems.values() {
-//             let a = system.as_any().downcast_ref::<&dyn System>().unwrap();
-//             systems.push(a);
-//         }
-//         for system in systems {
-//             // We can't give an exclusive borrow to the whole struct, because the systems are being iterated.
-//             // Our systems would not mutate the systems though, only the components.
-//             // We should store the components in a different field than the systems, then we can lend the components
-//             // while iterating the systems.
-//             system.run(self);
-//         }
-//     }
-// }
