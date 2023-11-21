@@ -545,8 +545,6 @@ mod tests {
         assert!(registry.add_component(e2, 5_i32).is_err());
     }
 
-    static mut EXPECTED_ENTITY_COUNT: usize = 1;
-
     #[derive(Clone)]
     struct CounterComponent {
         count: u32,
@@ -555,6 +553,7 @@ mod tests {
     struct CounterIncrementSystem {
         required_components: std::collections::HashSet<std::any::TypeId>,
         entities: std::collections::HashSet<Entity>,
+        expected_entity_count: std::sync::Arc<std::sync::Mutex<usize>>,
     }
 
     impl CounterIncrementSystem {
@@ -564,6 +563,7 @@ mod tests {
             Self {
                 required_components,
                 entities: std::collections::HashSet::new(),
+                expected_entity_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
             }
         }
     }
@@ -582,7 +582,10 @@ mod tests {
         }
 
         fn run(&self, ec_manager: &mut EntityComponentWrapper) {
-            assert_eq!(self.entities.len(), unsafe { EXPECTED_ENTITY_COUNT });
+            assert_eq!(
+                self.entities.len(),
+                *self.expected_entity_count.lock().unwrap()
+            );
             for entity in self.entities.iter() {
                 let counter_component: &mut CounterComponent =
                     ec_manager.get_component_mut(*entity).unwrap().unwrap();
@@ -599,10 +602,12 @@ mod tests {
     fn test_system_happy_path() {
         let mut registry = Registry::new();
         let e = registry.create_entity();
+        let system = CounterIncrementSystem::new();
+        let expected_entity_count = system.expected_entity_count.clone();
         registry
             .add_component(e, CounterComponent { count: 0 })
             .unwrap();
-        registry.add_system(CounterIncrementSystem::new());
+        registry.add_system(system);
         assert_eq!(
             registry
                 .get_component::<CounterComponent>(e)
@@ -612,9 +617,7 @@ mod tests {
             0
         );
         assert_eq!(registry.entities().count(), 1);
-        unsafe {
-            EXPECTED_ENTITY_COUNT = 1;
-        }
+        *expected_entity_count.lock().unwrap() = 1;
         registry.run_systems();
         assert_eq!(registry.entities().count(), 2);
         assert_eq!(
@@ -626,9 +629,7 @@ mod tests {
             1
         );
         assert_eq!(registry.entities().count(), 2);
-        unsafe {
-            EXPECTED_ENTITY_COUNT = 2;
-        }
+        *expected_entity_count.lock().unwrap() = 2;
         registry.run_systems();
         assert_eq!(registry.entities().count(), 3);
         assert_eq!(
@@ -642,17 +643,13 @@ mod tests {
 
         registry.remove_component::<CounterComponent>(e).unwrap();
         assert_eq!(registry.entities().count(), 3);
-        unsafe {
-            EXPECTED_ENTITY_COUNT = 2;
-        }
+        *expected_entity_count.lock().unwrap() = 2;
         registry.run_systems();
         assert_eq!(registry.entities().count(), 4);
 
         registry.remove_entity(e).unwrap();
         assert_eq!(registry.entities().count(), 3);
-        unsafe {
-            EXPECTED_ENTITY_COUNT = 3;
-        }
+        *expected_entity_count.lock().unwrap() = 3;
         registry.run_systems();
         assert_eq!(registry.entities().count(), 4);
     }
