@@ -412,7 +412,7 @@ impl Registry {
         let result = self.ec_manager.remove_component::<T>(entity);
         if result.is_ok() {
             for system in self.systems.values_mut() {
-                if self
+                if !self
                     .ec_manager
                     .has_components(entity)
                     .is_superset(system.required_components())
@@ -639,5 +639,21 @@ mod tests {
                 .count,
             2
         );
+
+        registry.remove_component::<CounterComponent>(e).unwrap();
+        assert_eq!(registry.entities().count(), 3);
+        unsafe {
+            EXPECTED_ENTITY_COUNT = 2;
+        }
+        registry.run_systems();
+        assert_eq!(registry.entities().count(), 4);
+
+        registry.remove_entity(e).unwrap();
+        assert_eq!(registry.entities().count(), 3);
+        unsafe {
+            EXPECTED_ENTITY_COUNT = 3;
+        }
+        registry.run_systems();
+        assert_eq!(registry.entities().count(), 4);
     }
 }
