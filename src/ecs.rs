@@ -189,7 +189,7 @@ impl EntityComponentManager {
         entity: Entity,
         component: T,
     ) -> Result<(), EcsError> {
-        if self.entity_manager.is_dead(entity) {
+        if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
@@ -212,7 +212,7 @@ impl EntityComponentManager {
     }
 
     fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
-        if self.entity_manager.is_dead(entity) {
+        if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
@@ -234,7 +234,7 @@ impl EntityComponentManager {
     }
 
     fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, EcsError> {
-        if self.entity_manager.is_dead(entity) {
+        if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
@@ -251,7 +251,7 @@ impl EntityComponentManager {
         &mut self,
         entity: Entity,
     ) -> Result<Option<&mut T>, EcsError> {
-        if self.entity_manager.is_dead(entity) {
+        if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
@@ -276,11 +276,83 @@ impl EntityComponentManager {
     }
 }
 
+struct EntityComponentWrapper<'ec> {
+    ec_manager: &'ec mut EntityComponentManager,
+    changed_entities: std::collections::HashSet<Entity>,
+}
+
+impl<'ec> EntityComponentWrapper<'ec> {
+    fn new(ec_manager: &'ec mut EntityComponentManager) -> Self {
+        Self {
+            ec_manager,
+            changed_entities: std::collections::HashSet::new(),
+        }
+    }
+
+    fn create_entity(&mut self) -> Entity {
+        let new_entity = self.ec_manager.create_entity();
+        self.changed_entities.insert(new_entity);
+        new_entity
+    }
+
+    fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
+        self.changed_entities.insert(entity);
+        self.ec_manager.remove_entity(entity)
+    }
+
+    fn is_alive(&self, entity: Entity) -> bool {
+        self.ec_manager.is_alive(entity)
+    }
+
+    fn is_dead(&self, entity: Entity) -> bool {
+        self.ec_manager.is_dead(entity)
+    }
+
+    fn add_component<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+        component: T,
+    ) -> Result<(), EcsError> {
+        self.changed_entities.insert(entity);
+        self.ec_manager.add_component(entity, component)
+    }
+
+    fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
+        self.changed_entities.insert(entity);
+        self.ec_manager.remove_component::<T>(entity)
+    }
+
+    fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, EcsError> {
+        self.ec_manager.get_component(entity)
+    }
+
+    fn get_component_mut<T: Clone + 'static>(
+        &mut self,
+        entity: Entity,
+    ) -> Result<Option<&mut T>, EcsError> {
+        self.ec_manager.get_component_mut(entity)
+    }
+
+    fn has_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
+        self.ec_manager.has_components(entity)
+    }
+
+    fn entities_and_components(
+        &self,
+    ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
+        self.ec_manager.entities_and_components()
+    }
+
+    fn changed_entities(&self) -> impl Iterator<Item = &Entity> {
+        self.changed_entities.iter()
+    }
+}
+
 trait System {
     fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId>;
     fn add_entity(&mut self, entity: Entity);
     fn remove_entity(&mut self, entity: Entity);
-    fn run(&self, ec_manager: &mut EntityComponentManager);
+    fn run(&self, ec_manager: &mut EntityComponentWrapper);
 }
 
 struct Registry {
@@ -379,8 +451,21 @@ impl Registry {
     }
 
     fn run_systems(&mut self) {
+        let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
         for system in self.systems.values() {
-            system.run(&mut self.ec_manager);
+            system.run(&mut ec_wrapper);
+        }
+        for entity in ec_wrapper.changed_entities() {
+            for system in self.systems.values_mut() {
+                if ec_wrapper
+                    .has_components(*entity)
+                    .is_superset(system.required_components())
+                {
+                    system.add_entity(*entity);
+                } else {
+                    system.remove_entity(*entity);
+                }
+            }
         }
     }
 
@@ -397,7 +482,7 @@ impl Registry {
 
 #[cfg(test)]
 mod tests {
-    use super::{Entity, EntityComponentManager, EntityManager, Registry, System};
+    use super::{Entity, EntityComponentWrapper, EntityManager, Registry, System};
 
     #[test]
     fn test_entity_manager_happy_path() {
@@ -496,7 +581,7 @@ mod tests {
             self.entities.remove(&entity);
         }
 
-        fn run(&self, ec_manager: &mut EntityComponentManager) {
+        fn run(&self, ec_manager: &mut EntityComponentWrapper) {
             assert_eq!(self.entities.len(), unsafe { EXPECTED_ENTITY_COUNT });
             for entity in self.entities.iter() {
                 let counter_component: &mut CounterComponent =
