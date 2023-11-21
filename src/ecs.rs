@@ -383,6 +383,16 @@ impl Registry {
             system.run(&mut self.ec_manager);
         }
     }
+
+    fn entities(&self) -> impl Iterator<Item = &Entity> {
+        self.ec_manager.entities_and_components().map(|(e, _c)| e)
+    }
+
+    fn entities_and_components(
+        &self,
+    ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
+        self.ec_manager.entities_and_components()
+    }
 }
 
 #[cfg(test)]
@@ -450,6 +460,8 @@ mod tests {
         assert!(registry.add_component(e2, 5_i32).is_err());
     }
 
+    static mut EXPECTED_ENTITY_COUNT: usize = 1;
+
     #[derive(Clone)]
     struct CounterComponent {
         count: u32,
@@ -485,11 +497,16 @@ mod tests {
         }
 
         fn run(&self, ec_manager: &mut EntityComponentManager) {
+            assert_eq!(self.entities.len(), unsafe { EXPECTED_ENTITY_COUNT });
             for entity in self.entities.iter() {
                 let counter_component: &mut CounterComponent =
                     ec_manager.get_component_mut(*entity).unwrap().unwrap();
                 counter_component.count += 1;
             }
+            let e = ec_manager.create_entity();
+            ec_manager
+                .add_component(e, CounterComponent { count: 0 })
+                .unwrap();
         }
     }
 
@@ -509,7 +526,12 @@ mod tests {
                 .count,
             0
         );
+        assert_eq!(registry.entities().count(), 1);
+        unsafe {
+            EXPECTED_ENTITY_COUNT = 1;
+        }
         registry.run_systems();
+        assert_eq!(registry.entities().count(), 2);
         assert_eq!(
             registry
                 .get_component::<CounterComponent>(e)
@@ -518,7 +540,12 @@ mod tests {
                 .count,
             1
         );
+        assert_eq!(registry.entities().count(), 2);
+        unsafe {
+            EXPECTED_ENTITY_COUNT = 2;
+        }
         registry.run_systems();
+        assert_eq!(registry.entities().count(), 3);
         assert_eq!(
             registry
                 .get_component::<CounterComponent>(e)
