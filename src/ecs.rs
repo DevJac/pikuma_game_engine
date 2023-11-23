@@ -4,13 +4,13 @@ type GenerationT = u32;
 const VEC_RESIZE_MARGIN: usize = 10;
 
 #[derive(Debug)]
-enum EcsError {
+pub enum EcsError {
     DeadEntity,
     NoSuchComponent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
-struct Entity {
+pub struct Entity {
     id: IndexT,
     generation: GenerationT,
 }
@@ -276,7 +276,7 @@ impl EntityComponentManager {
     }
 }
 
-struct EntityComponentWrapper<'ec> {
+pub struct EntityComponentWrapper<'ec> {
     ec_manager: &'ec mut EntityComponentManager,
     changed_entities: std::collections::HashSet<Entity>,
 }
@@ -289,26 +289,26 @@ impl<'ec> EntityComponentWrapper<'ec> {
         }
     }
 
-    fn create_entity(&mut self) -> Entity {
+    pub fn create_entity(&mut self) -> Entity {
         let new_entity = self.ec_manager.create_entity();
         self.changed_entities.insert(new_entity);
         new_entity
     }
 
-    fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
+    pub fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
         self.changed_entities.insert(entity);
         self.ec_manager.remove_entity(entity)
     }
 
-    fn is_alive(&self, entity: Entity) -> bool {
+    pub fn is_alive(&self, entity: Entity) -> bool {
         self.ec_manager.is_alive(entity)
     }
 
-    fn is_dead(&self, entity: Entity) -> bool {
+    pub fn is_dead(&self, entity: Entity) -> bool {
         self.ec_manager.is_dead(entity)
     }
 
-    fn add_component<T: Clone + 'static>(
+    pub fn add_component<T: Clone + 'static>(
         &mut self,
         entity: Entity,
         component: T,
@@ -317,78 +317,85 @@ impl<'ec> EntityComponentWrapper<'ec> {
         self.ec_manager.add_component(entity, component)
     }
 
-    fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
+    pub fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
         self.changed_entities.insert(entity);
         self.ec_manager.remove_component::<T>(entity)
     }
 
-    fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, EcsError> {
+    pub fn get_component<T: Clone + 'static>(
+        &self,
+        entity: Entity,
+    ) -> Result<Option<&T>, EcsError> {
         self.ec_manager.get_component(entity)
     }
 
-    fn get_component_mut<T: Clone + 'static>(
+    pub fn get_component_mut<T: Clone + 'static>(
         &mut self,
         entity: Entity,
     ) -> Result<Option<&mut T>, EcsError> {
         self.ec_manager.get_component_mut(entity)
     }
 
-    fn has_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
+    pub fn has_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
         self.ec_manager.has_components(entity)
     }
 
-    fn entities_and_components(
+    pub fn entities(&self) -> impl Iterator<Item = &Entity> {
+        self.ec_manager.entities_and_components().map(|(e, _c)| e)
+    }
+
+    pub fn entities_and_components(
         &self,
     ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
         self.ec_manager.entities_and_components()
     }
 
-    fn changed_entities(&self) -> impl Iterator<Item = &Entity> {
+    pub fn changed_entities(&self) -> impl Iterator<Item = &Entity> {
         self.changed_entities.iter()
     }
 }
 
-trait System {
+pub trait System {
     fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId>;
     fn add_entity(&mut self, entity: Entity);
     fn remove_entity(&mut self, entity: Entity);
     fn run(&self, ec_manager: &mut EntityComponentWrapper);
 }
 
-struct Registry {
+pub struct Registry {
     ec_manager: EntityComponentManager,
     systems: std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
 }
 
 impl Registry {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             ec_manager: EntityComponentManager::new(),
             systems: std::collections::HashMap::new(),
         }
     }
 
-    fn create_entity(&mut self) -> Entity {
+    pub fn create_entity(&mut self) -> Entity {
         // Because a new entity has no components, no systems will be interested in it.
         self.ec_manager.create_entity()
     }
 
-    fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
+    pub fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
         for system in self.systems.values_mut() {
             system.remove_entity(entity);
         }
         self.ec_manager.remove_entity(entity)
     }
 
-    fn is_alive(&self, entity: Entity) -> bool {
+    pub fn is_alive(&self, entity: Entity) -> bool {
         self.ec_manager.is_alive(entity)
     }
 
-    fn is_dead(&self, entity: Entity) -> bool {
+    pub fn is_dead(&self, entity: Entity) -> bool {
         self.ec_manager.is_dead(entity)
     }
 
-    fn add_component<T: Clone + 'static>(
+    pub fn add_component<T: Clone + 'static>(
         &mut self,
         entity: Entity,
         component: T,
@@ -408,7 +415,7 @@ impl Registry {
         result
     }
 
-    fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
+    pub fn remove_component<T: Clone + 'static>(&mut self, entity: Entity) -> Result<(), EcsError> {
         let result = self.ec_manager.remove_component::<T>(entity);
         if result.is_ok() {
             for system in self.systems.values_mut() {
@@ -424,18 +431,21 @@ impl Registry {
         result
     }
 
-    fn get_component<T: Clone + 'static>(&self, entity: Entity) -> Result<Option<&T>, EcsError> {
+    pub fn get_component<T: Clone + 'static>(
+        &self,
+        entity: Entity,
+    ) -> Result<Option<&T>, EcsError> {
         self.ec_manager.get_component(entity)
     }
 
-    fn get_component_mut<T: Clone + 'static>(
+    pub fn get_component_mut<T: Clone + 'static>(
         &mut self,
         entity: Entity,
     ) -> Result<Option<&mut T>, EcsError> {
         self.ec_manager.get_component_mut(entity)
     }
 
-    fn add_system<T: System + 'static>(&mut self, mut system: T) {
+    pub fn add_system<T: System + 'static>(&mut self, mut system: T) {
         for (entity, components) in self.ec_manager.entities_and_components() {
             if components.is_superset(system.required_components()) {
                 system.add_entity(*entity);
@@ -445,12 +455,12 @@ impl Registry {
         self.systems.insert(type_id, Box::new(system));
     }
 
-    fn remove_system<T: System + 'static>(&mut self) {
+    pub fn remove_system<T: System + 'static>(&mut self) {
         let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
         self.systems.remove(&type_id);
     }
 
-    fn run_systems(&mut self) {
+    pub fn run_systems(&mut self) {
         let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
         for system in self.systems.values() {
             system.run(&mut ec_wrapper);
@@ -469,11 +479,11 @@ impl Registry {
         }
     }
 
-    fn entities(&self) -> impl Iterator<Item = &Entity> {
+    pub fn entities(&self) -> impl Iterator<Item = &Entity> {
         self.ec_manager.entities_and_components().map(|(e, _c)| e)
     }
 
-    fn entities_and_components(
+    pub fn entities_and_components(
         &self,
     ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
         self.ec_manager.entities_and_components()
