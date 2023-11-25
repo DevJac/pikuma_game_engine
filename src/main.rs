@@ -65,7 +65,6 @@ fn main() {
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     event_loop
         .run(move |event, event_loop_window_target| {
-            let time_since_start: std::time::Duration = std::time::Instant::now() - start_time;
             match event {
                 winit::event::Event::WindowEvent {
                     window_id: _,
