@@ -462,7 +462,7 @@ impl Registry {
         self.systems.remove(&type_id);
     }
 
-    pub fn get_system<T: System + 'static>(
+    fn get_system<T: System + 'static>(
         systems: &std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
     ) -> Option<&T> {
         let type_id = std::any::TypeId::of::<T>();
