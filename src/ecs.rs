@@ -361,7 +361,7 @@ pub trait System {
     fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId>;
     fn add_entity(&mut self, entity: Entity);
     fn remove_entity(&mut self, entity: Entity);
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &dyn std::any::Any);
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &mut dyn std::any::Any);
 }
 
 pub struct Registry {
@@ -474,7 +474,7 @@ impl Registry {
 
     pub fn run_system<T: System + 'static>(
         &mut self,
-        input: &dyn std::any::Any,
+        input: &mut dyn std::any::Any,
     ) -> Result<(), EcsError> {
         let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
         let system = Self::get_system::<T>(&self.systems);
@@ -613,7 +613,7 @@ mod tests {
             self.entities.remove(&entity);
         }
 
-        fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &dyn std::any::Any) {
+        fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &mut dyn std::any::Any) {
             let increment_amount: &u32 = input
                 .downcast_ref()
                 .expect("CounterIncrementSystem expects u32");

@@ -1,3 +1,4 @@
+use pikuma_game_engine::ecs::Entity;
 // TODO: Game.run ?
 // TODO: Game.process_input
 // TODO: Game.update
@@ -11,23 +12,58 @@
 // TODO: Load an image and show it on the screen
 // TODO: Come up with something better than unwrap-based error handling
 use pikuma_game_engine::fps_stats::FPSStats;
-use pikuma_game_engine::renderer;
+use pikuma_game_engine::{components_systems, ecs, renderer};
 
 struct Game {
     renderer: renderer::Renderer,
-    width: u32,
-    tank_location: glam::Vec2,
+    registry: ecs::Registry,
 }
 
 impl Game {
     fn new(window: winit::window::Window, width: u32, height: u32) -> Self {
+        let mut registry = ecs::Registry::new();
+        let tree = registry.create_entity();
+        let tank = registry.create_entity();
+        registry
+            .add_component(
+                tree,
+                components_systems::RigidBodyComponent {
+                    position: glam::Vec2::new(20.0, 10.0),
+                    velocity: glam::Vec2::new(0.0, 0.0),
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                tree,
+                components_systems::SpriteComponent {
+                    tank_or_tree: renderer::TankOrTree::Tree,
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                tank,
+                components_systems::RigidBodyComponent {
+                    position: glam::Vec2::new(0.0, 50.0),
+                    velocity: glam::Vec2::new(5.0, 1.0),
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                tank,
+                components_systems::SpriteComponent {
+                    tank_or_tree: renderer::TankOrTree::Tank,
+                },
+            )
+            .unwrap();
+        registry.add_system(components_systems::MovementSystem::new());
+        registry.add_system(components_systems::RenderSystem::new());
+
         let renderer = renderer::Renderer::new(window, width, height);
         renderer.configure_surface();
-        Game {
-            renderer,
-            width,
-            tank_location: glam::Vec2::new(0.0, 25.0),
-        }
+        Game { renderer, registry }
     }
 
     fn configure_surface(&self) {
@@ -35,16 +71,13 @@ impl Game {
     }
 
     fn render(&mut self, delta_t: f32) {
-        self.tank_location += glam::Vec2::new(50.0, 0.0) * delta_t;
-        if self.tank_location.x > self.width as f32 {
-            self.tank_location = glam::Vec2::new(0.0, 25.0);
-        }
-        self.renderer
-            .draw_image(renderer::TankOrTree::Tree, glam::UVec2::new(20, 10));
-        self.renderer.draw_image(
-            renderer::TankOrTree::Tank,
-            self.tank_location.round().as_uvec2(),
-        );
+        let mut delta_t = delta_t.clone();
+        self.registry
+            .run_system::<components_systems::MovementSystem>(&mut delta_t)
+            .unwrap();
+        self.registry
+            .run_system::<components_systems::RenderSystem>(&mut self.renderer)
+            .unwrap();
         self.renderer.draw();
     }
 }

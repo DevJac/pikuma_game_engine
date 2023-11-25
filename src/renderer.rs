@@ -114,6 +114,7 @@ fn rotate_cc(angle_degrees: f32) -> glam::Mat2 {
 }
 
 // TODO: We need a better resource handling strategy
+#[derive(Clone, Copy)]
 pub enum TankOrTree {
     Tank,
     Tree,
