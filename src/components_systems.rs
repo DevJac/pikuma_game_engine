@@ -25,6 +25,10 @@ impl MovementSystem {
 }
 
 impl crate::ecs::System for MovementSystem {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
         &self.required_components
     }
@@ -37,11 +41,18 @@ impl crate::ecs::System for MovementSystem {
         self.entities.remove(&entity);
     }
 
-    fn run(&self, ec_manager: &mut crate::ecs::EntityComponentWrapper) {
+    fn run(
+        &self,
+        ec_manager: &mut crate::ecs::EntityComponentWrapper,
+        delta_time: &dyn std::any::Any,
+    ) {
+        let delta_time: &f32 = delta_time
+            .downcast_ref()
+            .expect("MovementSystem expects u32 delta_time");
         for entity in self.entities.iter() {
             let rigid_body_component: &mut RigidBody =
                 ec_manager.get_component_mut(*entity).unwrap().unwrap();
-            rigid_body_component.position += rigid_body_component.velocity;
+            rigid_body_component.position += rigid_body_component.velocity * *delta_time;
         }
     }
 }

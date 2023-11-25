@@ -7,6 +7,7 @@ const VEC_RESIZE_MARGIN: usize = 10;
 pub enum EcsError {
     DeadEntity,
     NoSuchComponent,
+    NoSuchSystem,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
@@ -356,10 +357,11 @@ impl<'ec> EntityComponentWrapper<'ec> {
 }
 
 pub trait System {
+    fn as_any(&self) -> &dyn std::any::Any;
     fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId>;
     fn add_entity(&mut self, entity: Entity);
     fn remove_entity(&mut self, entity: Entity);
-    fn run(&self, ec_manager: &mut EntityComponentWrapper);
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &dyn std::any::Any);
 }
 
 pub struct Registry {
@@ -460,11 +462,26 @@ impl Registry {
         self.systems.remove(&type_id);
     }
 
-    pub fn run_systems(&mut self) {
-        let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
-        for system in self.systems.values() {
-            system.run(&mut ec_wrapper);
+    pub fn get_system<T: System + 'static>(
+        systems: &std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
+    ) -> Option<&T> {
+        let type_id = std::any::TypeId::of::<T>();
+        if let Some(system_any) = systems.get(&type_id) {
+            return system_any.as_any().downcast_ref::<T>();
         }
+        None
+    }
+
+    pub fn run_system<T: System + 'static>(
+        &mut self,
+        input: &dyn std::any::Any,
+    ) -> Result<(), EcsError> {
+        let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
+        let system = Self::get_system::<T>(&self.systems);
+        if system.is_none() {
+            return Err(EcsError::NoSuchSystem);
+        }
+        system.unwrap().run(&mut ec_wrapper, input);
         for entity in ec_wrapper.changed_entities() {
             for system in self.systems.values_mut() {
                 if ec_wrapper
@@ -477,6 +494,7 @@ impl Registry {
                 }
             }
         }
+        Ok(())
     }
 
     pub fn entities(&self) -> impl Iterator<Item = &Entity> {
@@ -579,6 +597,10 @@ mod tests {
     }
 
     impl System for CounterIncrementSystem {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
         fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
             &self.required_components
         }
@@ -591,7 +613,10 @@ mod tests {
             self.entities.remove(&entity);
         }
 
-        fn run(&self, ec_manager: &mut EntityComponentWrapper) {
+        fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &dyn std::any::Any) {
+            let increment_amount: &u32 = input
+                .downcast_ref()
+                .expect("CounterIncrementSystem expects u32");
             assert_eq!(
                 self.entities.len(),
                 *self.expected_entity_count.lock().unwrap()
@@ -599,7 +624,7 @@ mod tests {
             for entity in self.entities.iter() {
                 let counter_component: &mut CounterComponent =
                     ec_manager.get_component_mut(*entity).unwrap().unwrap();
-                counter_component.count += 1;
+                counter_component.count += increment_amount;
             }
             let e = ec_manager.create_entity();
             ec_manager
@@ -628,7 +653,9 @@ mod tests {
         );
         assert_eq!(registry.entities().count(), 1);
         *expected_entity_count.lock().unwrap() = 1;
-        registry.run_systems();
+        registry
+            .run_system::<CounterIncrementSystem>(&1_u32)
+            .unwrap();
         assert_eq!(registry.entities().count(), 2);
         assert_eq!(
             registry
@@ -640,7 +667,9 @@ mod tests {
         );
         assert_eq!(registry.entities().count(), 2);
         *expected_entity_count.lock().unwrap() = 2;
-        registry.run_systems();
+        registry
+            .run_system::<CounterIncrementSystem>(&1_u32)
+            .unwrap();
         assert_eq!(registry.entities().count(), 3);
         assert_eq!(
             registry
@@ -654,13 +683,17 @@ mod tests {
         registry.remove_component::<CounterComponent>(e).unwrap();
         assert_eq!(registry.entities().count(), 3);
         *expected_entity_count.lock().unwrap() = 2;
-        registry.run_systems();
+        registry
+            .run_system::<CounterIncrementSystem>(&1_u32)
+            .unwrap();
         assert_eq!(registry.entities().count(), 4);
 
         registry.remove_entity(e).unwrap();
         assert_eq!(registry.entities().count(), 3);
         *expected_entity_count.lock().unwrap() = 3;
-        registry.run_systems();
+        registry
+            .run_system::<CounterIncrementSystem>(&1_u32)
+            .unwrap();
         assert_eq!(registry.entities().count(), 4);
     }
 }
