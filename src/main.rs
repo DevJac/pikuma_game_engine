@@ -1,4 +1,3 @@
-use pikuma_game_engine::ecs::Entity;
 // TODO: Game.run ?
 // TODO: Game.process_input
 // TODO: Game.update
@@ -71,12 +70,13 @@ impl Game {
     }
 
     fn render(&mut self, delta_t: f32) {
-        let mut delta_t = delta_t.clone();
         self.registry
-            .run_system::<components_systems::MovementSystem>(&mut delta_t)
+            .run_system::<f32, components_systems::MovementSystem>(delta_t)
             .unwrap();
         self.registry
-            .run_system::<components_systems::RenderSystem>(&mut self.renderer)
+            .run_system::<&mut renderer::Renderer, components_systems::RenderSystem>(
+                &mut self.renderer,
+            )
             .unwrap();
         self.renderer.draw();
     }

@@ -24,7 +24,7 @@ impl MovementSystem {
     }
 }
 
-impl crate::ecs::System for MovementSystem {
+impl crate::ecs::SystemBase for MovementSystem {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -40,19 +40,14 @@ impl crate::ecs::System for MovementSystem {
     fn remove_entity(&mut self, entity: crate::ecs::Entity) {
         self.entities.remove(&entity);
     }
+}
 
-    fn run(
-        &self,
-        ec_manager: &mut crate::ecs::EntityComponentWrapper,
-        delta_time: &mut dyn std::any::Any,
-    ) {
-        let delta_time: &f32 = delta_time
-            .downcast_ref()
-            .expect("MovementSystem expects u32 delta_time");
+impl crate::ecs::System<f32> for MovementSystem {
+    fn run(&self, ec_manager: &mut crate::ecs::EntityComponentWrapper, delta_time: f32) {
         for entity in self.entities.iter() {
             let rigid_body_component: &mut RigidBodyComponent =
                 ec_manager.get_component_mut(*entity).unwrap().unwrap();
-            rigid_body_component.position += rigid_body_component.velocity * *delta_time;
+            rigid_body_component.position += rigid_body_component.velocity * delta_time;
         }
     }
 }
@@ -83,7 +78,7 @@ impl RenderSystem {
     }
 }
 
-impl crate::ecs::System for RenderSystem {
+impl crate::ecs::SystemBase for RenderSystem {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -99,15 +94,14 @@ impl crate::ecs::System for RenderSystem {
     fn remove_entity(&mut self, entity: crate::ecs::Entity) {
         self.entities.remove(&entity);
     }
+}
 
+impl crate::ecs::System<&mut crate::renderer::Renderer> for RenderSystem {
     fn run(
         &self,
         ec_manager: &mut crate::ecs::EntityComponentWrapper,
-        renderer: &mut dyn std::any::Any,
+        renderer: &mut crate::renderer::Renderer,
     ) {
-        let renderer: &mut crate::renderer::Renderer = renderer
-            .downcast_mut()
-            .expect("RenderSystem expects renderer");
         for entity in self.entities.iter() {
             let rigid_body_component: &RigidBodyComponent =
                 ec_manager.get_component(*entity).unwrap().unwrap();
