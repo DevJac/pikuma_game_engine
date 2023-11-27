@@ -1,3 +1,6 @@
+use std::any::{Any, TypeId};
+use std::collections::{HashMap, HashSet};
+
 type IndexT = u32;
 type GenerationT = u32;
 
@@ -151,24 +154,22 @@ impl<T: Clone> ComponentPool<T> {
 
 struct EntityComponentManager {
     entity_manager: EntityManager,
-    entity_components:
-        std::collections::HashMap<Entity, std::collections::HashSet<std::any::TypeId>>,
-    component_pools: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
+    entity_components: HashMap<Entity, HashSet<TypeId>>,
+    component_pools: HashMap<TypeId, Box<dyn Any>>,
 }
 
 impl EntityComponentManager {
     fn new() -> Self {
         Self {
             entity_manager: EntityManager::new(),
-            entity_components: std::collections::HashMap::new(),
-            component_pools: std::collections::HashMap::new(),
+            entity_components: HashMap::new(),
+            component_pools: HashMap::new(),
         }
     }
 
     fn create_entity(&mut self) -> Entity {
         let new_entity = self.entity_manager.create_entity();
-        self.entity_components
-            .insert(new_entity, std::collections::HashSet::new());
+        self.entity_components.insert(new_entity, HashSet::new());
         new_entity
     }
 
@@ -193,7 +194,7 @@ impl EntityComponentManager {
         if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
-        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        let type_id: TypeId = TypeId::of::<T>();
         self.entity_components
             .get_mut(&entity)
             .unwrap()
@@ -216,7 +217,7 @@ impl EntityComponentManager {
         if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
-        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        let type_id: TypeId = TypeId::of::<T>();
         self.entity_components
             .get_mut(&entity)
             .unwrap()
@@ -238,7 +239,7 @@ impl EntityComponentManager {
         if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
-        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        let type_id: TypeId = TypeId::of::<T>();
         match self.component_pools.get(&type_id) {
             None => Err(EcsError::NoSuchComponent),
             Some(component_pool) => {
@@ -255,7 +256,7 @@ impl EntityComponentManager {
         if self.is_dead(entity) {
             return Err(EcsError::DeadEntity);
         }
-        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        let type_id: TypeId = TypeId::of::<T>();
         match self.component_pools.get_mut(&type_id) {
             None => Err(EcsError::NoSuchComponent),
             Some(component_pool) => {
@@ -266,27 +267,25 @@ impl EntityComponentManager {
         }
     }
 
-    fn has_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
+    fn has_components(&self, entity: Entity) -> &HashSet<TypeId> {
         self.entity_components.get(&entity).unwrap()
     }
 
-    fn entities_and_components(
-        &self,
-    ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
+    fn entities_and_components(&self) -> impl Iterator<Item = (&Entity, &HashSet<TypeId>)> {
         self.entity_components.iter()
     }
 }
 
 pub struct EntityComponentWrapper<'ec> {
     ec_manager: &'ec mut EntityComponentManager,
-    changed_entities: std::collections::HashSet<Entity>,
+    changed_entities: HashSet<Entity>,
 }
 
 impl<'ec> EntityComponentWrapper<'ec> {
     fn new(ec_manager: &'ec mut EntityComponentManager) -> Self {
         Self {
             ec_manager,
-            changed_entities: std::collections::HashSet::new(),
+            changed_entities: HashSet::new(),
         }
     }
 
@@ -337,7 +336,7 @@ impl<'ec> EntityComponentWrapper<'ec> {
         self.ec_manager.get_component_mut(entity)
     }
 
-    pub fn has_components(&self, entity: Entity) -> &std::collections::HashSet<std::any::TypeId> {
+    pub fn has_components(&self, entity: Entity) -> &HashSet<TypeId> {
         self.ec_manager.has_components(entity)
     }
 
@@ -345,9 +344,7 @@ impl<'ec> EntityComponentWrapper<'ec> {
         self.ec_manager.entities_and_components().map(|(e, _c)| e)
     }
 
-    pub fn entities_and_components(
-        &self,
-    ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
+    pub fn entities_and_components(&self) -> impl Iterator<Item = (&Entity, &HashSet<TypeId>)> {
         self.ec_manager.entities_and_components()
     }
 
@@ -357,23 +354,23 @@ impl<'ec> EntityComponentWrapper<'ec> {
 }
 
 pub trait System {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId>;
+    fn as_any(&self) -> &dyn Any;
+    fn required_components(&self) -> &HashSet<TypeId>;
     fn add_entity(&mut self, entity: Entity);
     fn remove_entity(&mut self, entity: Entity);
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &mut dyn std::any::Any);
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &mut dyn Any);
 }
 
 pub struct Registry {
     ec_manager: EntityComponentManager,
-    systems: std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
+    systems: HashMap<TypeId, Box<dyn System>>,
 }
 
 impl Registry {
     pub fn new() -> Self {
         Self {
             ec_manager: EntityComponentManager::new(),
-            systems: std::collections::HashMap::new(),
+            systems: HashMap::new(),
         }
     }
 
@@ -453,29 +450,24 @@ impl Registry {
                 system.add_entity(*entity);
             }
         }
-        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        let type_id: TypeId = TypeId::of::<T>();
         self.systems.insert(type_id, Box::new(system));
     }
 
     pub fn remove_system<T: System + 'static>(&mut self) {
-        let type_id: std::any::TypeId = std::any::TypeId::of::<T>();
+        let type_id: TypeId = TypeId::of::<T>();
         self.systems.remove(&type_id);
     }
 
-    fn get_system<T: System + 'static>(
-        systems: &std::collections::HashMap<std::any::TypeId, Box<dyn System>>,
-    ) -> Option<&T> {
-        let type_id = std::any::TypeId::of::<T>();
+    fn get_system<T: System + 'static>(systems: &HashMap<TypeId, Box<dyn System>>) -> Option<&T> {
+        let type_id = TypeId::of::<T>();
         if let Some(system_any) = systems.get(&type_id) {
             return system_any.as_any().downcast_ref::<T>();
         }
         None
     }
 
-    pub fn run_system<T: System + 'static>(
-        &mut self,
-        input: &mut dyn std::any::Any,
-    ) -> Result<(), EcsError> {
+    pub fn run_system<T: System + 'static>(&mut self, input: &mut dyn Any) -> Result<(), EcsError> {
         let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
         let system = Self::get_system::<T>(&self.systems);
         if system.is_none() {
@@ -501,9 +493,7 @@ impl Registry {
         self.ec_manager.entities_and_components().map(|(e, _c)| e)
     }
 
-    pub fn entities_and_components(
-        &self,
-    ) -> impl Iterator<Item = (&Entity, &std::collections::HashSet<std::any::TypeId>)> {
+    pub fn entities_and_components(&self) -> impl Iterator<Item = (&Entity, &HashSet<TypeId>)> {
         self.ec_manager.entities_and_components()
     }
 }
@@ -511,6 +501,8 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::{Entity, EntityComponentWrapper, EntityManager, Registry, System};
+    use std::any::{Any, TypeId};
+    use std::collections::HashSet;
 
     #[test]
     fn test_entity_manager_happy_path() {
@@ -579,29 +571,29 @@ mod tests {
     }
 
     struct CounterIncrementSystem {
-        required_components: std::collections::HashSet<std::any::TypeId>,
-        entities: std::collections::HashSet<Entity>,
+        required_components: HashSet<TypeId>,
+        entities: HashSet<Entity>,
         expected_entity_count: std::sync::Arc<std::sync::Mutex<usize>>,
     }
 
     impl CounterIncrementSystem {
         fn new() -> Self {
-            let mut required_components = std::collections::HashSet::new();
-            required_components.insert(std::any::TypeId::of::<CounterComponent>());
+            let mut required_components = HashSet::new();
+            required_components.insert(TypeId::of::<CounterComponent>());
             Self {
                 required_components,
-                entities: std::collections::HashSet::new(),
+                entities: HashSet::new(),
                 expected_entity_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
             }
         }
     }
 
     impl System for CounterIncrementSystem {
-        fn as_any(&self) -> &dyn std::any::Any {
+        fn as_any(&self) -> &dyn Any {
             self
         }
 
-        fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
+        fn required_components(&self) -> &HashSet<TypeId> {
             &self.required_components
         }
 
@@ -613,7 +605,7 @@ mod tests {
             self.entities.remove(&entity);
         }
 
-        fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &mut dyn std::any::Any) {
+        fn run(&self, ec_manager: &mut EntityComponentWrapper, input: &mut dyn Any) {
             let increment_amount: &u32 = input
                 .downcast_ref()
                 .expect("CounterIncrementSystem expects u32");
