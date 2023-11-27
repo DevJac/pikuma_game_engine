@@ -360,8 +360,9 @@ pub trait SystemBase {
     fn remove_entity(&mut self, entity: Entity);
 }
 
-pub trait System<I>: SystemBase {
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, input: I);
+pub trait System: SystemBase {
+    type Input<'i>;
+    fn run<'i>(&self, ec_manager: &mut EntityComponentWrapper, input: Self::Input<'i>);
 }
 
 pub struct Registry {
@@ -447,7 +448,7 @@ impl Registry {
         self.ec_manager.get_component_mut(entity)
     }
 
-    pub fn add_system<I, S: System<I> + 'static>(&mut self, mut system: S) {
+    pub fn add_system<S: System + 'static>(&mut self, mut system: S) {
         for (entity, components) in self.ec_manager.entities_and_components() {
             if components.is_superset(system.required_components()) {
                 system.add_entity(*entity);
@@ -457,12 +458,12 @@ impl Registry {
         self.systems.insert(type_id, Box::new(system));
     }
 
-    pub fn remove_system<I, S: System<I> + 'static>(&mut self) {
+    pub fn remove_system<S: System + 'static>(&mut self) {
         let type_id: TypeId = TypeId::of::<S>();
         self.systems.remove(&type_id);
     }
 
-    fn get_system<I, S: System<I> + 'static>(
+    fn get_system<S: System + 'static>(
         systems: &HashMap<TypeId, Box<dyn SystemBase>>,
     ) -> Option<&S> {
         let type_id = TypeId::of::<S>();
@@ -472,9 +473,9 @@ impl Registry {
         None
     }
 
-    pub fn run_system<I, S: System<I> + 'static>(&mut self, input: I) -> Result<(), EcsError> {
+    pub fn run_system<S: System + 'static>(&mut self, input: S::Input<'_>) -> Result<(), EcsError> {
         let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
-        let system = Self::get_system::<I, S>(&self.systems);
+        let system = Self::get_system::<S>(&self.systems);
         if system.is_none() {
             return Err(EcsError::NoSuchSystem);
         }
@@ -611,8 +612,10 @@ mod tests {
         }
     }
 
-    impl System<u32> for CounterIncrementSystem {
-        fn run(&self, ec_manager: &mut EntityComponentWrapper, increment_amount: u32) {
+    impl System for CounterIncrementSystem {
+        type Input<'i> = u32;
+
+        fn run(&self, ec_manager: &mut EntityComponentWrapper, increment_amount: Self::Input<'_>) {
             assert_eq!(
                 self.entities.len(),
                 *self.expected_entity_count.lock().unwrap()
@@ -649,9 +652,7 @@ mod tests {
         );
         assert_eq!(registry.entities().count(), 1);
         *expected_entity_count.lock().unwrap() = 1;
-        registry
-            .run_system::<u32, CounterIncrementSystem>(1)
-            .unwrap();
+        registry.run_system::<CounterIncrementSystem>(1).unwrap();
         assert_eq!(registry.entities().count(), 2);
         assert_eq!(
             registry
@@ -663,9 +664,7 @@ mod tests {
         );
         assert_eq!(registry.entities().count(), 2);
         *expected_entity_count.lock().unwrap() = 2;
-        registry
-            .run_system::<u32, CounterIncrementSystem>(1)
-            .unwrap();
+        registry.run_system::<CounterIncrementSystem>(1).unwrap();
         assert_eq!(registry.entities().count(), 3);
         assert_eq!(
             registry
@@ -679,17 +678,13 @@ mod tests {
         registry.remove_component::<CounterComponent>(e).unwrap();
         assert_eq!(registry.entities().count(), 3);
         *expected_entity_count.lock().unwrap() = 2;
-        registry
-            .run_system::<u32, CounterIncrementSystem>(1)
-            .unwrap();
+        registry.run_system::<CounterIncrementSystem>(1).unwrap();
         assert_eq!(registry.entities().count(), 4);
 
         registry.remove_entity(e).unwrap();
         assert_eq!(registry.entities().count(), 3);
         *expected_entity_count.lock().unwrap() = 3;
-        registry
-            .run_system::<u32, CounterIncrementSystem>(1)
-            .unwrap();
+        registry.run_system::<CounterIncrementSystem>(1).unwrap();
         assert_eq!(registry.entities().count(), 4);
     }
 }

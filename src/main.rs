@@ -71,12 +71,10 @@ impl Game {
 
     fn render(&mut self, delta_t: f32) {
         self.registry
-            .run_system::<f32, components_systems::MovementSystem>(delta_t)
+            .run_system::<components_systems::MovementSystem>(delta_t)
             .unwrap();
         self.registry
-            .run_system::<&mut renderer::Renderer, components_systems::RenderSystem>(
-                &mut self.renderer,
-            )
+            .run_system::<components_systems::RenderSystem>(&mut self.renderer)
             .unwrap();
         self.renderer.draw();
     }

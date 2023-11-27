@@ -42,8 +42,14 @@ impl crate::ecs::SystemBase for MovementSystem {
     }
 }
 
-impl crate::ecs::System<f32> for MovementSystem {
-    fn run(&self, ec_manager: &mut crate::ecs::EntityComponentWrapper, delta_time: f32) {
+impl crate::ecs::System for MovementSystem {
+    type Input<'i> = f32;
+
+    fn run(
+        &self,
+        ec_manager: &mut crate::ecs::EntityComponentWrapper,
+        delta_time: Self::Input<'_>,
+    ) {
         for entity in self.entities.iter() {
             let rigid_body_component: &mut RigidBodyComponent =
                 ec_manager.get_component_mut(*entity).unwrap().unwrap();
@@ -96,12 +102,10 @@ impl crate::ecs::SystemBase for RenderSystem {
     }
 }
 
-impl crate::ecs::System<&mut crate::renderer::Renderer> for RenderSystem {
-    fn run(
-        &self,
-        ec_manager: &mut crate::ecs::EntityComponentWrapper,
-        renderer: &mut crate::renderer::Renderer,
-    ) {
+impl crate::ecs::System for RenderSystem {
+    type Input<'i> = &'i mut crate::renderer::Renderer;
+
+    fn run(&self, ec_manager: &mut crate::ecs::EntityComponentWrapper, renderer: Self::Input<'_>) {
         for entity in self.entities.iter() {
             let rigid_body_component: &RigidBodyComponent =
                 ec_manager.get_component(*entity).unwrap().unwrap();
