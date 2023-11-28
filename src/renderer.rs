@@ -135,7 +135,7 @@ impl LowResPass {
         canvas_width: u32,
         canvas_height: u32,
         preferred_format: wgpu::TextureFormat,
-        sprites_texture_view: &wgpu::TextureView,
+        sprites_texture_view: Vec<&wgpu::TextureView>,
     ) -> Self {
         let low_res_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("low res texture"),
@@ -155,10 +155,55 @@ impl LowResPass {
             low_res_texture.create_view(&wgpu::TextureViewDescriptor::default());
         // TODO: Stop including the shader in the compiled binary. Compile them at runtime.
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/low_res.wgsl"));
+        let bind_group_layout: wgpu::BindGroupLayout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("low res bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size:
+                                Some(
+                                    std::num::NonZeroU64::new(
+                                        std::mem::size_of::<glam::UVec2>() as u64
+                                    )
+                                    .unwrap(),
+                                ),
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: Some(
+                            std::num::NonZeroU32::new(sprites_texture_view.len() as u32).unwrap(),
+                        ),
+                    },
+                ],
+            });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("low res pipeline layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
         let pipeline: wgpu::RenderPipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("low res pipeline"),
-                layout: None,
+                layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vertex_main",
@@ -197,10 +242,23 @@ impl LowResPass {
                 canvas_height,
             )));
         uniform_buffer.unmap();
-        let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+        let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("low res sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 0.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        });
         let bind_group: wgpu::BindGroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("low res bind group"),
-            layout: &pipeline.get_bind_group_layout(0),
+            layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -216,7 +274,7 @@ impl LowResPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&sprites_texture_view),
+                    resource: wgpu::BindingResource::TextureViewArray(&sprites_texture_view),
                 },
             ],
         });
@@ -239,10 +297,14 @@ impl LowResPass {
 
     fn draw_image(&mut self, queue: &wgpu::Queue, tank_or_tree: TankOrTree, location: glam::UVec2) {
         let texture_index = match tank_or_tree {
-            TankOrTree::Tank => 0,
-            TankOrTree::Tree => 1,
+            TankOrTree::Tank => (0, 32, 32),
+            TankOrTree::Tree => (1, 16, 32),
         };
-        let square_vertices = square(location, glam::UVec2::new(32, 32), texture_index);
+        let square_vertices = square(
+            location,
+            glam::UVec2::new(texture_index.1, texture_index.2),
+            texture_index.0,
+        );
         let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
         queue.write_buffer(
             &self.vertex_buffer,
@@ -433,17 +495,24 @@ impl Renderer {
             *surface.get_capabilities(&adapter).formats.get(0).unwrap();
         log::debug!("Preferred format is: {:?}", &preferred_format);
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("device descriptor"),
+                    features: wgpu::Features::TEXTURE_BINDING_ARRAY | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+                    limits: wgpu::Limits::default(),
+                },
+                None,
+            )
             .block_on()
             .unwrap();
         log::debug!("WGPU setup");
-        let (_sprites_texture, sprites_texture_view) = Renderer::load_textures(&device, &queue);
+        let sprites_texture_view = Renderer::load_textures(&device, &queue);
         let low_res_pass = LowResPass::new(
             &device,
             canvas_width,
             canvas_height,
             preferred_format,
-            &sprites_texture_view,
+            sprites_texture_view.iter().collect(),
         );
         let surface_pass = SurfacePass::new(
             &device,
@@ -461,17 +530,13 @@ impl Renderer {
         }
     }
 
-    fn load_textures(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> (wgpu::Texture, wgpu::TextureView) {
-        let textures: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("sprite textures"),
+    fn load_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<wgpu::TextureView> {
+        let tank_texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("tank texture"),
             size: wgpu::Extent3d {
                 width: 32,
                 height: 32,
-                // TODO: Texture layers needs to be dynamic or something. Hard code 2 for now.
-                depth_or_array_layers: 2,
+                depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -480,7 +545,24 @@ impl Renderer {
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let textures_view = textures.create_view(&wgpu::TextureViewDescriptor::default());
+        let tank_texture_view: wgpu::TextureView =
+            tank_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let tree_texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("tree texture"),
+            size: wgpu::Extent3d {
+                width: 16,
+                height: 32,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let tree_texture_view: wgpu::TextureView =
+            tree_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let tank: image::DynamicImage =
             image::io::Reader::open("assets/images/tank-panther-right.png")
                 .unwrap()
@@ -492,7 +574,7 @@ impl Renderer {
             .unwrap();
         queue.write_texture(
             wgpu::ImageCopyTexture {
-                texture: &textures,
+                texture: &tank_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
                 aspect: wgpu::TextureAspect::All,
@@ -511,9 +593,9 @@ impl Renderer {
         );
         queue.write_texture(
             wgpu::ImageCopyTexture {
-                texture: &textures,
+                texture: &tree_texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y: 0, z: 1 },
+                origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },
             tree.as_bytes(),
@@ -528,7 +610,7 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
         );
-        (textures, textures_view)
+        vec![tank_texture_view, tree_texture_view]
     }
 
     pub fn configure_surface(&self) {

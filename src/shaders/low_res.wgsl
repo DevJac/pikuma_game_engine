@@ -17,7 +17,7 @@ struct TextureFragment {
 
 @group(0) @binding(0) var<uniform> texture_size: TextureSize;
 @group(0) @binding(1) var textures_sampler: sampler;
-@group(0) @binding(2) var textures: texture_2d_array<f32>;
+@group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
 
 @vertex
 fn vertex_main(vertex: TextureVertex) -> TextureFragment {
@@ -37,10 +37,6 @@ fn fragment_main(fragment: TextureFragment) -> @location(0) vec4f {
     // because our game assets are not all the same size.
     // We need to adjust the UV coordinates so that (1, 1) refers to
     // the lower right of the initialized portion of the texture.
-    let full_dim: vec2u = textureDimensions(textures);
-    let adjusted_uv = vec2f(
-        fragment.uv.x * (f32(fragment.lower_right.x) / f32(full_dim.x)),
-        fragment.uv.y * (f32(fragment.lower_right.y) / f32(full_dim.y))
-    );
-    return textureSample(textures, textures_sampler, adjusted_uv, fragment.lower_right.z);
+    let texture_index = fragment.lower_right.z;
+    return textureSample(textures[texture_index], textures_sampler, fragment.uv);
 }
