@@ -562,15 +562,17 @@ impl Renderer {
         });
         let tree_texture_view: wgpu::TextureView =
             tree_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let tank: image::DynamicImage =
+        let tank: image::RgbaImage =
             image::io::Reader::open("assets/images/tank-panther-right.png")
                 .unwrap()
                 .decode()
-                .unwrap();
-        let tree: image::DynamicImage = image::io::Reader::open("assets/images/tree.png")
+                .unwrap()
+                .into_rgba8();
+        let tree: image::RgbaImage = image::io::Reader::open("assets/images/tree.png")
             .unwrap()
             .decode()
-            .unwrap();
+            .unwrap()
+            .into_rgba8();
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &tank_texture,
@@ -578,7 +580,7 @@ impl Renderer {
                 origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },
-            tank.as_bytes(),
+            tank.as_raw(),
             wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(tank.width() * 4),
@@ -597,7 +599,7 @@ impl Renderer {
                 origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },
-            tree.as_bytes(),
+            tree.as_raw(),
             wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(tree.width() * 4),
