@@ -7,18 +7,18 @@ struct TextureSize {
 struct TextureVertex {
     @location(0) position: vec2f,
     @location(1) uv: vec2f,
-    @location(2) texture_index: u32,
+    @location(2) lower_right: vec3u,
 };
 
 struct TextureFragment {
     @builtin(position) position: vec4f,
     @location(1) uv: vec2f,
-    @location(2) @interpolate(flat) texture_index: u32,
+    @location(2) @interpolate(flat) lower_right: vec3u,
 };
 
 @group(0) @binding(0) var<uniform> texture_size: TextureSize;
 @group(0) @binding(1) var textures_sampler: sampler;
-@group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
+@group(0) @binding(2) var textures: texture_2d_array<f32>;
 
 @vertex
 fn vertex_main(vertex: TextureVertex) -> TextureFragment {
@@ -30,10 +30,15 @@ fn vertex_main(vertex: TextureVertex) -> TextureFragment {
         0.0,
         1.0,
     );
-    return TextureFragment(ndc, vertex.uv, vertex.texture_index);
+    return TextureFragment(ndc, vertex.uv, vertex.lower_right);
 }
 
 @fragment
 fn fragment_main(fragment: TextureFragment) -> @location(0) vec4f {
-    return textureSample(textures[fragment.texture_index], textures_sampler, fragment.uv);
+    let full_dims: vec2u = textureDimensions(textures);
+    let adjusted_uv = vec2f(
+        fragment.uv.x * (f32(fragment.lower_right.x) / f32(full_dims.x)),
+        fragment.uv.y * (f32(fragment.lower_right.y) / f32(full_dims.y)),
+    );
+    return textureSample(textures, textures_sampler, adjusted_uv, fragment.lower_right.z);
 }
