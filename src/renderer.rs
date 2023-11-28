@@ -26,7 +26,7 @@ const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
 struct TextureVertex {
     position: glam::Vec2,
     uv: glam::Vec2,
-    lower_right: glam::UVec3,
+    texture_index: u32,
 }
 
 const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
@@ -41,7 +41,7 @@ const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
         shader_location: 1,
     },
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Uint32x3, // size = 4 * 3 = 12
+        format: wgpu::VertexFormat::Uint32, // size = 4
         offset: 16,
         shader_location: 2,
     },
@@ -75,16 +75,15 @@ fn square(
     texture_size: glam::UVec2,
     texture_index: u32,
 ) -> [TextureVertex; SQUARE_VERTS as usize] {
-    let lower_right = glam::UVec3::new(texture_size.x, texture_size.y, texture_index);
     let v0 = TextureVertex {
         position: glam::Vec2::new(position.x as f32, position.y as f32),
         uv: glam::Vec2::new(0.0, 0.0),
-        lower_right,
+        texture_index,
     };
     let v1 = TextureVertex {
         position: glam::Vec2::new(position.x as f32, (position.y + texture_size.y) as f32),
         uv: glam::Vec2::new(0.0, 1.0),
-        lower_right,
+        texture_index,
     };
     let v2 = TextureVertex {
         position: glam::Vec2::new(
@@ -92,12 +91,12 @@ fn square(
             (position.y + texture_size.y) as f32,
         ),
         uv: glam::Vec2::new(1.0, 1.0),
-        lower_right,
+        texture_index,
     };
     let v3 = TextureVertex {
         position: glam::Vec2::new((position.x + texture_size.x) as f32, position.y as f32),
         uv: glam::Vec2::new(1.0, 0.0),
-        lower_right,
+        texture_index,
     };
     [v0, v1, v2, v2, v3, v0]
 }
