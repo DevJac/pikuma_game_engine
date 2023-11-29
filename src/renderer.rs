@@ -1,13 +1,24 @@
 use pollster::FutureExt as _;
 use wgpu::util::DeviceExt as _;
 
-struct SpriteIndex(u32);
+#[derive(Clone, Copy)]
+pub struct SpriteIndex(u32);
 
-#[derive(Debug, PartialEq, Eq)]
-struct Sprite {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sprite {
     file: std::path::PathBuf,
     top_left: glam::UVec2,
     width_height: glam::UVec2,
+}
+
+impl Sprite {
+    pub fn new(file: std::path::PathBuf, top_left: glam::UVec2, width_height: glam::UVec2) -> Self {
+        Self {
+            file,
+            top_left,
+            width_height,
+        }
+    }
 }
 
 #[repr(C)]
@@ -138,7 +149,6 @@ struct LowResPass {
     draw_buffer_square_index: u32,
     // Sprites
     sprites: wgpu::Texture,
-    sprites_view: wgpu::TextureView,
     loaded_sprites: Vec<Sprite>,
 }
 
@@ -276,7 +286,6 @@ impl LowResPass {
             vertex_buffer,
             draw_buffer_square_index: 0,
             sprites,
-            sprites_view,
             loaded_sprites: Vec::new(),
         }
     }
@@ -289,10 +298,10 @@ impl LowResPass {
         {
             return SpriteIndex(existing_index as u32);
         }
-        let sprite_image: image::RgbaImage = image::io::Reader::open(sprite.file)
-            .expect("couldn't open sprite file")
+        let sprite_image: image::RgbaImage = image::io::Reader::open(&sprite.file)
+            .unwrap_or_else(|_| panic!("couldn't open sprite file ({:?})", &sprite.file))
             .decode()
-            .expect("couldn't decode sprite file")
+            .unwrap_or_else(|_| panic!("couldn't decode sprite file ({:?})", &sprite.file))
             .into_rgba8();
         let sprite_index = self.loaded_sprites.len() as u32;
         let bytes_per_pixel = 4;
@@ -320,6 +329,7 @@ impl LowResPass {
             },
         );
         self.loaded_sprites.push(sprite);
+        log::debug!("Loaded new sprite at index: {}", sprite_index);
         SpriteIndex(sprite_index)
     }
 
@@ -570,6 +580,10 @@ impl Renderer {
                 view_formats: vec![],
             },
         );
+    }
+
+    pub fn load_sprite(&mut self, sprite: Sprite) -> SpriteIndex {
+        self.low_res_pass.load_sprite(&self.queue, sprite)
     }
 
     pub fn draw_image(&mut self, sprite_index: SpriteIndex, location: glam::UVec2) {
