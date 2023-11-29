@@ -272,9 +272,10 @@ impl LowResPass {
             ],
         });
         // TODO: Use an instance buffer as well
+        // TODO: What should we do about this hard-coded static buffer size?
         let vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("low res vertex buffer"),
-            size: 1000,
+            size: 100_000,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -302,6 +303,12 @@ impl LowResPass {
             .unwrap_or_else(|_| panic!("couldn't open sprite file ({:?})", &sprite.file))
             .decode()
             .unwrap_or_else(|_| panic!("couldn't decode sprite file ({:?})", &sprite.file))
+            .crop(
+                sprite.top_left.x,
+                sprite.top_left.y,
+                sprite.width_height.x,
+                sprite.width_height.y,
+            )
             .into_rgba8();
         let sprite_index = self.loaded_sprites.len() as u32;
         let bytes_per_pixel = 4;

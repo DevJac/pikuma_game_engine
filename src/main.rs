@@ -11,7 +11,9 @@
 // TODO: Load an image and show it on the screen
 // TODO: Come up with something better than unwrap-based error handling
 use pikuma_game_engine::fps_stats::FPSStats;
+use pikuma_game_engine::renderer::Sprite;
 use pikuma_game_engine::{components_systems, ecs, renderer};
+use std::io::BufRead as _;
 
 struct Game {
     renderer: renderer::Renderer,
@@ -40,7 +42,7 @@ impl Game {
             .add_component(
                 tree,
                 components_systems::SpriteComponent {
-                    sprite_index: renderer.load_sprite(pikuma_game_engine::renderer::Sprite::new(
+                    sprite_index: renderer.load_sprite(Sprite::new(
                         "assets/images/tree.png".into(),
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(16, 32),
@@ -61,7 +63,7 @@ impl Game {
             .add_component(
                 tank_1,
                 components_systems::SpriteComponent {
-                    sprite_index: renderer.load_sprite(pikuma_game_engine::renderer::Sprite::new(
+                    sprite_index: renderer.load_sprite(Sprite::new(
                         "assets/images/tank-panther-right.png".into(),
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(32, 32),
@@ -82,7 +84,7 @@ impl Game {
             .add_component(
                 tank_2,
                 components_systems::SpriteComponent {
-                    sprite_index: renderer.load_sprite(pikuma_game_engine::renderer::Sprite::new(
+                    sprite_index: renderer.load_sprite(Sprite::new(
                         "assets/images/tank-panther-right.png".into(),
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(32, 32),
@@ -93,7 +95,45 @@ impl Game {
         registry.add_system(components_systems::MovementSystem::new());
         registry.add_system(components_systems::RenderSystem::new());
 
-        Game { renderer, registry }
+        let mut game = Game { renderer, registry };
+        game.load_map("assets/tilemaps/jungle.map");
+        game
+    }
+
+    /// Read tilemap and create entities for each background tile.
+    fn load_map<P: AsRef<std::path::Path>>(&mut self, map_file: P) {
+        let map_file = std::fs::File::open(&map_file)
+            .unwrap_or_else(|_| panic!("can't read map file ({:?})", map_file.as_ref()));
+        let reader = std::io::BufReader::new(map_file);
+        for (row, line) in reader.lines().enumerate() {
+            let line = line.expect("can't read map file line");
+            for (col, tile) in line.split(',').enumerate() {
+                let tile = tile.trim().parse::<u32>().expect("can't parse tile index");
+                let sprite = Sprite::new(
+                    "assets/tilemaps/jungle.png".into(),
+                    glam::UVec2::new(32 * (tile % 10), 32 * (tile / 10)),
+                    glam::UVec2::new(32, 32),
+                );
+                let background_tile = self.registry.create_entity();
+                self.registry
+                    .add_component(
+                        background_tile,
+                        components_systems::RigidBodyComponent {
+                            position: glam::Vec2::new(32.0 * col as f32, 32.0 * row as f32),
+                            velocity: glam::Vec2::new(0.0, 0.0),
+                        },
+                    )
+                    .unwrap();
+                self.registry
+                    .add_component(
+                        background_tile,
+                        components_systems::SpriteComponent {
+                            sprite_index: self.renderer.load_sprite(sprite),
+                        },
+                    )
+                    .unwrap();
+            }
+        }
     }
 
     fn configure_surface(&self) {
