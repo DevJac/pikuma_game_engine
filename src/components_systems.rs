@@ -64,7 +64,7 @@ impl crate::ecs::System for MovementSystem {
 
 #[derive(Clone)]
 pub struct SpriteComponent {
-    pub tank_or_tree: crate::renderer::TankOrTree,
+    pub sprite_index: crate::renderer::SpriteIndex,
 }
 
 pub struct RenderSystem {
@@ -112,7 +112,7 @@ impl crate::ecs::System for RenderSystem {
             let sprite_component: &SpriteComponent =
                 ec_manager.get_component(*entity).unwrap().unwrap();
             renderer.draw_image(
-                sprite_component.tank_or_tree,
+                sprite_component.sprite_index,
                 rigid_body_component.position.as_uvec2(),
             );
         }

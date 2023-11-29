@@ -21,8 +21,12 @@ struct Game {
 impl Game {
     fn new(window: winit::window::Window, width: u32, height: u32) -> Self {
         let mut registry = ecs::Registry::new();
+        let mut renderer = renderer::Renderer::new(window, width, height);
+        renderer.configure_surface();
+
         let tree = registry.create_entity();
-        let tank = registry.create_entity();
+        let tank_1 = registry.create_entity();
+        let tank_2 = registry.create_entity();
         registry
             .add_component(
                 tree,
@@ -36,13 +40,17 @@ impl Game {
             .add_component(
                 tree,
                 components_systems::SpriteComponent {
-                    tank_or_tree: renderer::TankOrTree::Tree,
+                    sprite_index: renderer.load_sprite(pikuma_game_engine::renderer::Sprite::new(
+                        "assets/images/tree.png".into(),
+                        glam::UVec2::new(0, 0),
+                        glam::UVec2::new(16, 32),
+                    )),
                 },
             )
             .unwrap();
         registry
             .add_component(
-                tank,
+                tank_1,
                 components_systems::RigidBodyComponent {
                     position: glam::Vec2::new(0.0, 50.0),
                     velocity: glam::Vec2::new(5.0, 1.0),
@@ -51,17 +59,40 @@ impl Game {
             .unwrap();
         registry
             .add_component(
-                tank,
+                tank_1,
                 components_systems::SpriteComponent {
-                    tank_or_tree: renderer::TankOrTree::Tank,
+                    sprite_index: renderer.load_sprite(pikuma_game_engine::renderer::Sprite::new(
+                        "assets/images/tank-panther-right.png".into(),
+                        glam::UVec2::new(0, 0),
+                        glam::UVec2::new(32, 32),
+                    )),
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                tank_2,
+                components_systems::RigidBodyComponent {
+                    position: glam::Vec2::new(0.0, 100.0),
+                    velocity: glam::Vec2::new(5.0, 2.0),
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                tank_2,
+                components_systems::SpriteComponent {
+                    sprite_index: renderer.load_sprite(pikuma_game_engine::renderer::Sprite::new(
+                        "assets/images/tank-panther-right.png".into(),
+                        glam::UVec2::new(0, 0),
+                        glam::UVec2::new(32, 32),
+                    )),
                 },
             )
             .unwrap();
         registry.add_system(components_systems::MovementSystem::new());
         registry.add_system(components_systems::RenderSystem::new());
 
-        let renderer = renderer::Renderer::new(window, width, height);
-        renderer.configure_surface();
         Game { renderer, registry }
     }
 

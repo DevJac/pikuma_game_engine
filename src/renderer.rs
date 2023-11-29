@@ -1,6 +1,26 @@
 use pollster::FutureExt as _;
 use wgpu::util::DeviceExt as _;
 
+#[derive(Clone, Copy)]
+pub struct SpriteIndex(u32);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sprite {
+    file: std::path::PathBuf,
+    top_left: glam::UVec2,
+    width_height: glam::UVec2,
+}
+
+impl Sprite {
+    pub fn new(file: std::path::PathBuf, top_left: glam::UVec2, width_height: glam::UVec2) -> Self {
+        Self {
+            file,
+            top_left,
+            width_height,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 struct Vertex {
@@ -127,6 +147,9 @@ struct LowResPass {
     bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     draw_buffer_square_index: u32,
+    // Sprites
+    sprites: wgpu::Texture,
+    loaded_sprites: Vec<Sprite>,
 }
 
 impl LowResPass {
@@ -135,7 +158,6 @@ impl LowResPass {
         canvas_width: u32,
         canvas_height: u32,
         preferred_format: wgpu::TextureFormat,
-        sprites_texture_view: &wgpu::TextureView,
     ) -> Self {
         let low_res_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("low res texture"),
@@ -211,6 +233,22 @@ impl LowResPass {
             anisotropy_clamp: 1,
             border_color: None,
         });
+        let sprites: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("low res sprites"),
+            size: wgpu::Extent3d {
+                width: 32,
+                height: 32,
+                depth_or_array_layers: 256,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let sprites_view: wgpu::TextureView =
+            sprites.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group: wgpu::BindGroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("low res bind group"),
             layout: &pipeline.get_bind_group_layout(0),
@@ -229,7 +267,7 @@ impl LowResPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(sprites_texture_view),
+                    resource: wgpu::BindingResource::TextureView(&sprites_view),
                 },
             ],
         });
@@ -247,19 +285,63 @@ impl LowResPass {
             bind_group,
             vertex_buffer,
             draw_buffer_square_index: 0,
+            sprites,
+            loaded_sprites: Vec::new(),
         }
     }
 
-    fn draw_image(&mut self, queue: &wgpu::Queue, tank_or_tree: TankOrTree, location: glam::UVec2) {
-        let texture_index = match tank_or_tree {
-            TankOrTree::Tank => (0, 32, 32),
-            TankOrTree::Tree => (1, 16, 32),
-        };
-        let square_vertices = square(
-            location,
-            glam::UVec2::new(texture_index.1, texture_index.2),
-            texture_index.0,
+    fn load_sprite(&mut self, queue: &wgpu::Queue, sprite: Sprite) -> SpriteIndex {
+        if let Some(existing_index) = self
+            .loaded_sprites
+            .iter()
+            .position(|loaded_sprite| *loaded_sprite == sprite)
+        {
+            return SpriteIndex(existing_index as u32);
+        }
+        let sprite_image: image::RgbaImage = image::io::Reader::open(&sprite.file)
+            .unwrap_or_else(|_| panic!("couldn't open sprite file ({:?})", &sprite.file))
+            .decode()
+            .unwrap_or_else(|_| panic!("couldn't decode sprite file ({:?})", &sprite.file))
+            .into_rgba8();
+        let sprite_index = self.loaded_sprites.len() as u32;
+        let bytes_per_pixel = 4;
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.sprites,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: sprite_index,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            sprite_image.as_raw(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(sprite_image.width() * bytes_per_pixel),
+                rows_per_image: Some(sprite_image.height()),
+            },
+            wgpu::Extent3d {
+                width: sprite_image.width(),
+                height: sprite_image.height(),
+                depth_or_array_layers: 1,
+            },
         );
+        self.loaded_sprites.push(sprite);
+        log::debug!("Loaded new sprite at index: {}", sprite_index);
+        SpriteIndex(sprite_index)
+    }
+
+    fn draw_image(
+        &mut self,
+        queue: &wgpu::Queue,
+        sprite_index: SpriteIndex,
+        location: glam::UVec2,
+    ) {
+        let sprite_width_height: glam::UVec2 =
+            self.loaded_sprites[sprite_index.0 as usize].width_height;
+        let square_vertices = square(location, sprite_width_height, sprite_index.0);
         let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
         queue.write_buffer(
             &self.vertex_buffer,
@@ -454,14 +536,7 @@ impl Renderer {
             .block_on()
             .unwrap();
         log::debug!("WGPU setup");
-        let sprites_texture_view: wgpu::TextureView = Renderer::load_textures(&device, &queue);
-        let low_res_pass = LowResPass::new(
-            &device,
-            canvas_width,
-            canvas_height,
-            preferred_format,
-            &sprites_texture_view,
-        );
+        let low_res_pass = LowResPass::new(&device, canvas_width, canvas_height, preferred_format);
         let surface_pass = SurfacePass::new(
             &device,
             preferred_format,
@@ -476,75 +551,6 @@ impl Renderer {
             low_res_pass,
             surface_pass,
         }
-    }
-
-    fn load_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView {
-        let textures: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("textures"),
-            size: wgpu::Extent3d {
-                width: 32,
-                height: 32,
-                depth_or_array_layers: 2,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let textures_view: wgpu::TextureView =
-            textures.create_view(&wgpu::TextureViewDescriptor::default());
-        let tank: image::RgbaImage =
-            image::io::Reader::open("assets/images/tank-panther-right.png")
-                .unwrap()
-                .decode()
-                .unwrap()
-                .into_rgba8();
-        let tree: image::RgbaImage = image::io::Reader::open("assets/images/tree.png")
-            .unwrap()
-            .decode()
-            .unwrap()
-            .into_rgba8();
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &textures,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            tank.as_raw(),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(tank.width() * 4),
-                rows_per_image: Some(tank.height()),
-            },
-            wgpu::Extent3d {
-                width: tank.width(),
-                height: tank.height(),
-                depth_or_array_layers: 1,
-            },
-        );
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &textures,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y: 0, z: 1 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            tree.as_raw(),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(tree.width() * 4),
-                rows_per_image: Some(tree.height()),
-            },
-            wgpu::Extent3d {
-                width: tree.width(),
-                height: tree.height(),
-                depth_or_array_layers: 1,
-            },
-        );
-        textures_view
     }
 
     pub fn configure_surface(&self) {
@@ -576,9 +582,13 @@ impl Renderer {
         );
     }
 
-    pub fn draw_image(&mut self, tank_or_tree: TankOrTree, location: glam::UVec2) {
+    pub fn load_sprite(&mut self, sprite: Sprite) -> SpriteIndex {
+        self.low_res_pass.load_sprite(&self.queue, sprite)
+    }
+
+    pub fn draw_image(&mut self, sprite_index: SpriteIndex, location: glam::UVec2) {
         self.low_res_pass
-            .draw_image(&self.queue, tank_or_tree, location);
+            .draw_image(&self.queue, sprite_index, location);
     }
 
     pub fn draw(&mut self) {
