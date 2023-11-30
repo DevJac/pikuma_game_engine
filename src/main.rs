@@ -47,6 +47,7 @@ impl Game {
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(16, 32),
                     )),
+                    sprite_z: 0.5,
                 },
             )
             .unwrap();
@@ -55,7 +56,7 @@ impl Game {
                 tank_1,
                 components_systems::RigidBodyComponent {
                     position: glam::Vec2::new(0.0, 50.0),
-                    velocity: glam::Vec2::new(5.0, 1.0),
+                    velocity: glam::Vec2::new(10.0, 4.0),
                 },
             )
             .unwrap();
@@ -68,6 +69,7 @@ impl Game {
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(32, 32),
                     )),
+                    sprite_z: 0.5,
                 },
             )
             .unwrap();
@@ -76,7 +78,7 @@ impl Game {
                 tank_2,
                 components_systems::RigidBodyComponent {
                     position: glam::Vec2::new(0.0, 100.0),
-                    velocity: glam::Vec2::new(5.0, 2.0),
+                    velocity: glam::Vec2::new(10.0, 8.0),
                 },
             )
             .unwrap();
@@ -89,6 +91,7 @@ impl Game {
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(32, 32),
                     )),
+                    sprite_z: 0.5,
                 },
             )
             .unwrap();
@@ -129,6 +132,7 @@ impl Game {
                         background_tile,
                         components_systems::SpriteComponent {
                             sprite_index: self.renderer.load_sprite(sprite),
+                            sprite_z: 0.0,
                         },
                     )
                     .unwrap();

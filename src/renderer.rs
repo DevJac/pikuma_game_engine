@@ -30,12 +30,12 @@ struct Vertex {
 
 const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x2, // size = 4 * 2 = 8
+        format: wgpu::VertexFormat::Float32x2, // position size = 4 * 2 = 8
         offset: 0,
         shader_location: 0,
     },
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x2, // size = 4 * 2 = 8
+        format: wgpu::VertexFormat::Float32x2, // uv size = 4 * 2 = 8
         offset: 8,
         shader_location: 1,
     },
@@ -44,25 +44,25 @@ const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 struct TextureVertex {
-    position: glam::Vec2,
+    position: glam::Vec3,
     uv: glam::Vec2,
     lower_right: glam::UVec3,
 }
 
 const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x2, // size = 4 * 2 = 8
+        format: wgpu::VertexFormat::Float32x3, // position size = 4 * 3 = 12
         offset: 0,
         shader_location: 0,
     },
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x2, // size = 4 * 2 = 8
-        offset: 8,
+        format: wgpu::VertexFormat::Float32x2, // uv size = 4 * 2 = 8
+        offset: 12,
         shader_location: 1,
     },
     wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Uint32x3, // size = 4 * 3 = 12
-        offset: 16,
+        format: wgpu::VertexFormat::Uint32x3, // lower_right size = 4 * 3 = 12
+        offset: 20,
         shader_location: 2,
     },
 ];
@@ -92,30 +92,32 @@ fn ndc_square() -> [Vertex; SQUARE_VERTS as usize] {
 
 fn square(
     position: glam::UVec2,
+    z: f32,
     texture_size: glam::UVec2,
     texture_index: u32,
 ) -> [TextureVertex; SQUARE_VERTS as usize] {
     let lower_right = glam::UVec3::new(texture_size.x, texture_size.y, texture_index);
     let v0 = TextureVertex {
-        position: glam::Vec2::new(position.x as f32, position.y as f32),
+        position: glam::Vec3::new(position.x as f32, position.y as f32, z),
         uv: glam::Vec2::new(0.0, 0.0),
         lower_right,
     };
     let v1 = TextureVertex {
-        position: glam::Vec2::new(position.x as f32, (position.y + texture_size.y) as f32),
+        position: glam::Vec3::new(position.x as f32, (position.y + texture_size.y) as f32, z),
         uv: glam::Vec2::new(0.0, 1.0),
         lower_right,
     };
     let v2 = TextureVertex {
-        position: glam::Vec2::new(
+        position: glam::Vec3::new(
             (position.x + texture_size.x) as f32,
             (position.y + texture_size.y) as f32,
+            z,
         ),
         uv: glam::Vec2::new(1.0, 1.0),
         lower_right,
     };
     let v3 = TextureVertex {
-        position: glam::Vec2::new((position.x + texture_size.x) as f32, position.y as f32),
+        position: glam::Vec3::new((position.x + texture_size.x) as f32, position.y as f32, z),
         uv: glam::Vec2::new(1.0, 0.0),
         lower_right,
     };
@@ -344,11 +346,12 @@ impl LowResPass {
         &mut self,
         queue: &wgpu::Queue,
         sprite_index: SpriteIndex,
+        sprite_z: f32,
         location: glam::UVec2,
     ) {
         let sprite_width_height: glam::UVec2 =
             self.loaded_sprites[sprite_index.0 as usize].width_height;
-        let square_vertices = square(location, sprite_width_height, sprite_index.0);
+        let square_vertices = square(location, sprite_z, sprite_width_height, sprite_index.0);
         let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
         queue.write_buffer(
             &self.vertex_buffer,
@@ -593,9 +596,9 @@ impl Renderer {
         self.low_res_pass.load_sprite(&self.queue, sprite)
     }
 
-    pub fn draw_image(&mut self, sprite_index: SpriteIndex, location: glam::UVec2) {
+    pub fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::UVec2) {
         self.low_res_pass
-            .draw_image(&self.queue, sprite_index, location);
+            .draw_image(&self.queue, sprite_index, sprite_z, location);
     }
 
     pub fn draw(&mut self) {

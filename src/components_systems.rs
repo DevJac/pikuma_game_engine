@@ -65,6 +65,7 @@ impl crate::ecs::System for MovementSystem {
 #[derive(Clone)]
 pub struct SpriteComponent {
     pub sprite_index: crate::renderer::SpriteIndex,
+    pub sprite_z: f32,
 }
 
 pub struct RenderSystem {
@@ -113,6 +114,7 @@ impl crate::ecs::System for RenderSystem {
                 ec_manager.get_component(*entity).unwrap().unwrap();
             renderer.draw_image(
                 sprite_component.sprite_index,
+                sprite_component.sprite_z,
                 rigid_body_component.position.as_uvec2(),
             );
         }
