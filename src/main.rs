@@ -29,6 +29,7 @@ impl Game {
         let tree = registry.create_entity();
         let tank_1 = registry.create_entity();
         let tank_2 = registry.create_entity();
+        let helicopter = registry.create_entity();
         registry
             .add_component(
                 tree,
@@ -47,7 +48,7 @@ impl Game {
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(16, 32),
                     )),
-                    sprite_z: 0.5,
+                    sprite_layer: components_systems::Layer::Ground,
                 },
             )
             .unwrap();
@@ -69,7 +70,7 @@ impl Game {
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(32, 32),
                     )),
-                    sprite_z: 0.5,
+                    sprite_layer: components_systems::Layer::Ground,
                 },
             )
             .unwrap();
@@ -91,7 +92,29 @@ impl Game {
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(32, 32),
                     )),
-                    sprite_z: 0.5,
+                    sprite_layer: components_systems::Layer::Ground,
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                helicopter,
+                components_systems::RigidBodyComponent {
+                    position: glam::Vec2::new(0.0, 200.0),
+                    velocity: glam::Vec2::new(10.0, -1.0),
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                helicopter,
+                components_systems::SpriteComponent {
+                    sprite_index: renderer.load_sprite(Sprite::new(
+                        "assets/images/chopper.png".into(),
+                        glam::UVec2::new(0, 0),
+                        glam::UVec2::new(32, 32),
+                    )),
+                    sprite_layer: components_systems::Layer::Air,
                 },
             )
             .unwrap();
@@ -132,7 +155,7 @@ impl Game {
                         background_tile,
                         components_systems::SpriteComponent {
                             sprite_index: self.renderer.load_sprite(sprite),
-                            sprite_z: 0.0,
+                            sprite_layer: components_systems::Layer::Background,
                         },
                     )
                     .unwrap();

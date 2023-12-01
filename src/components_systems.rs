@@ -60,10 +60,27 @@ impl System for MovementSystem {
 // Sprite / Render
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layer {
+    Background,
+    Ground,
+    Air,
+}
+
+impl Layer {
+    fn as_z(&self) -> f32 {
+        match self {
+            Layer::Background => 0.0,
+            Layer::Ground => 0.5,
+            Layer::Air => 1.0,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SpriteComponent {
     pub sprite_index: crate::renderer::SpriteIndex,
-    pub sprite_z: f32,
+    pub sprite_layer: Layer,
 }
 
 pub struct RenderSystem {
@@ -116,11 +133,16 @@ impl System for RenderSystem {
                 (rigid_body_component, sprite_component)
             })
             .collect();
-        components.sort_by(|a, b| a.1.sprite_z.partial_cmp(&b.1.sprite_z).unwrap());
+        components.sort_by(|a, b| {
+            a.1.sprite_layer
+                .as_z()
+                .partial_cmp(&b.1.sprite_layer.as_z())
+                .unwrap()
+        });
         for (rigid_body_component, sprite_component) in components {
             renderer.draw_image(
                 sprite_component.sprite_index,
-                sprite_component.sprite_z,
+                sprite_component.sprite_layer.as_z(),
                 rigid_body_component.position.as_uvec2(),
             );
         }
