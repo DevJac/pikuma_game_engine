@@ -1,3 +1,5 @@
+use crate::ecs::{Entity, EntityComponentWrapper, System, SystemBase};
+
 ///////////////////////////////////////////////////////////////////////////////
 // RigidBody / Movement
 ///////////////////////////////////////////////////////////////////////////////
@@ -10,7 +12,7 @@ pub struct RigidBodyComponent {
 
 pub struct MovementSystem {
     required_components: std::collections::HashSet<std::any::TypeId>,
-    entities: std::collections::HashSet<crate::ecs::Entity>,
+    entities: std::collections::HashSet<Entity>,
 }
 
 impl MovementSystem {
@@ -24,7 +26,7 @@ impl MovementSystem {
     }
 }
 
-impl crate::ecs::SystemBase for MovementSystem {
+impl SystemBase for MovementSystem {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -33,23 +35,19 @@ impl crate::ecs::SystemBase for MovementSystem {
         &self.required_components
     }
 
-    fn add_entity(&mut self, entity: crate::ecs::Entity) {
+    fn add_entity(&mut self, entity: Entity) {
         self.entities.insert(entity);
     }
 
-    fn remove_entity(&mut self, entity: crate::ecs::Entity) {
+    fn remove_entity(&mut self, entity: Entity) {
         self.entities.remove(&entity);
     }
 }
 
-impl crate::ecs::System for MovementSystem {
+impl System for MovementSystem {
     type Input<'i> = f32;
 
-    fn run(
-        &self,
-        ec_manager: &mut crate::ecs::EntityComponentWrapper,
-        delta_time: Self::Input<'_>,
-    ) {
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, delta_time: Self::Input<'_>) {
         for entity in self.entities.iter() {
             let rigid_body_component: &mut RigidBodyComponent =
                 ec_manager.get_component_mut(*entity).unwrap().unwrap();
@@ -65,11 +63,12 @@ impl crate::ecs::System for MovementSystem {
 #[derive(Clone)]
 pub struct SpriteComponent {
     pub sprite_index: crate::renderer::SpriteIndex,
+    pub sprite_z: f32,
 }
 
 pub struct RenderSystem {
     required_components: std::collections::HashSet<std::any::TypeId>,
-    entities: std::collections::HashSet<crate::ecs::Entity>,
+    entities: std::collections::HashSet<Entity>,
 }
 
 impl RenderSystem {
@@ -84,7 +83,7 @@ impl RenderSystem {
     }
 }
 
-impl crate::ecs::SystemBase for RenderSystem {
+impl SystemBase for RenderSystem {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -93,26 +92,35 @@ impl crate::ecs::SystemBase for RenderSystem {
         &self.required_components
     }
 
-    fn add_entity(&mut self, entity: crate::ecs::Entity) {
+    fn add_entity(&mut self, entity: Entity) {
         self.entities.insert(entity);
     }
 
-    fn remove_entity(&mut self, entity: crate::ecs::Entity) {
+    fn remove_entity(&mut self, entity: Entity) {
         self.entities.remove(&entity);
     }
 }
 
-impl crate::ecs::System for RenderSystem {
+impl System for RenderSystem {
     type Input<'i> = &'i mut crate::renderer::Renderer;
 
-    fn run(&self, ec_manager: &mut crate::ecs::EntityComponentWrapper, renderer: Self::Input<'_>) {
-        for entity in self.entities.iter() {
-            let rigid_body_component: &RigidBodyComponent =
-                ec_manager.get_component(*entity).unwrap().unwrap();
-            let sprite_component: &SpriteComponent =
-                ec_manager.get_component(*entity).unwrap().unwrap();
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, renderer: Self::Input<'_>) {
+        let mut components: Vec<(&RigidBodyComponent, &SpriteComponent)> = self
+            .entities
+            .iter()
+            .map(|entity| {
+                let rigid_body_component: &RigidBodyComponent =
+                    ec_manager.get_component(*entity).unwrap().unwrap();
+                let sprite_component: &SpriteComponent =
+                    ec_manager.get_component(*entity).unwrap().unwrap();
+                (rigid_body_component, sprite_component)
+            })
+            .collect();
+        components.sort_by(|a, b| a.1.sprite_z.partial_cmp(&b.1.sprite_z).unwrap());
+        for (rigid_body_component, sprite_component) in components {
             renderer.draw_image(
                 sprite_component.sprite_index,
+                sprite_component.sprite_z,
                 rigid_body_component.position.as_uvec2(),
             );
         }

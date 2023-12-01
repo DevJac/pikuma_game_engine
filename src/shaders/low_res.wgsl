@@ -5,7 +5,7 @@ struct TextureSize {
 };
 
 struct TextureVertex {
-    @location(0) position: vec2f,
+    @location(0) position: vec3f,
     @location(1) uv: vec2f,
     @location(2) lower_right: vec3u,
 };
@@ -27,7 +27,7 @@ fn vertex_main(vertex: TextureVertex) -> TextureFragment {
     let ndc = vec4f(
         vertex.position.x / f32(texture_size.width) * 2.0 - 1.0,
         vertex.position.y / f32(texture_size.height) * 2.0 - 1.0,
-        0.0,
+        vertex.position.z,
         1.0,
     );
     return TextureFragment(ndc, vertex.uv, vertex.lower_right);
