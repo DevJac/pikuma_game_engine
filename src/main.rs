@@ -118,7 +118,28 @@ impl Game {
                 },
             )
             .unwrap();
+        registry
+            .add_component(
+                helicopter,
+                components_systems::AnimationComponent::new(
+                    1.0 / 15.0,
+                    vec![
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper.png".into(),
+                            glam::UVec2::new(0, 0),
+                            glam::UVec2::new(32, 32),
+                        )),
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper.png".into(),
+                            glam::UVec2::new(32, 0),
+                            glam::UVec2::new(32, 32),
+                        )),
+                    ],
+                ),
+            )
+            .unwrap();
         registry.add_system(components_systems::MovementSystem::new());
+        registry.add_system(components_systems::AnimationSystem::new());
         registry.add_system(components_systems::RenderSystem::new());
 
         let mut game = Game { renderer, registry };
@@ -170,6 +191,9 @@ impl Game {
     fn render(&mut self, delta_t: f32) {
         self.registry
             .run_system::<components_systems::MovementSystem>(delta_t)
+            .unwrap();
+        self.registry
+            .run_system::<components_systems::AnimationSystem>(delta_t)
             .unwrap();
         self.registry
             .run_system::<components_systems::RenderSystem>(&mut self.renderer)

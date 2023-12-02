@@ -1,4 +1,7 @@
-use crate::ecs::{Entity, EntityComponentWrapper, System, SystemBase};
+use crate::{
+    ecs::{Entity, EntityComponentWrapper, System, SystemBase},
+    renderer::{Renderer, SpriteIndex},
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // RigidBody / Movement
@@ -79,7 +82,7 @@ impl Layer {
 
 #[derive(Clone)]
 pub struct SpriteComponent {
-    pub sprite_index: crate::renderer::SpriteIndex,
+    pub sprite_index: SpriteIndex,
     pub sprite_layer: Layer,
 }
 
@@ -119,7 +122,7 @@ impl SystemBase for RenderSystem {
 }
 
 impl System for RenderSystem {
-    type Input<'i> = &'i mut crate::renderer::Renderer;
+    type Input<'i> = &'i mut Renderer;
 
     fn run(&self, ec_manager: &mut EntityComponentWrapper, renderer: Self::Input<'_>) {
         let mut components: Vec<(&RigidBodyComponent, &SpriteComponent)> = self
@@ -145,6 +148,89 @@ impl System for RenderSystem {
                 sprite_component.sprite_layer.as_z(),
                 rigid_body_component.position.as_uvec2(),
             );
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Animation
+///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone)]
+pub struct AnimationComponent {
+    pub frames: Vec<SpriteIndex>,
+    pub frame_time: f32,
+    pub current_frame: u32,
+    pub current_frame_time: f32,
+}
+
+impl AnimationComponent {
+    pub fn new(frame_time: f32, frames: Vec<SpriteIndex>) -> Self {
+        Self {
+            frames,
+            frame_time,
+            current_frame: 0,
+            current_frame_time: 0.0,
+        }
+    }
+}
+
+pub struct AnimationSystem {
+    required_components: std::collections::HashSet<std::any::TypeId>,
+    entities: std::collections::HashSet<Entity>,
+}
+
+impl AnimationSystem {
+    pub fn new() -> Self {
+        let mut required_components = std::collections::HashSet::new();
+        required_components.insert(std::any::TypeId::of::<SpriteComponent>());
+        required_components.insert(std::any::TypeId::of::<AnimationComponent>());
+        Self {
+            required_components,
+            entities: std::collections::HashSet::new(),
+        }
+    }
+}
+
+impl SystemBase for AnimationSystem {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
+        &self.required_components
+    }
+
+    fn add_entity(&mut self, entity: Entity) {
+        self.entities.insert(entity);
+    }
+
+    fn remove_entity(&mut self, entity: Entity) {
+        self.entities.remove(&entity);
+    }
+}
+
+impl System for AnimationSystem {
+    type Input<'i> = f32;
+
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, delta_time: Self::Input<'_>) {
+        for entity in self.entities.iter() {
+            let animation_component: &mut AnimationComponent =
+                ec_manager.get_component_mut(*entity).unwrap().unwrap();
+            animation_component.current_frame_time += delta_time;
+            let mut update_sprite_frame: Option<SpriteIndex> = None;
+            if animation_component.current_frame_time > animation_component.frame_time {
+                animation_component.current_frame_time -= animation_component.frame_time;
+                animation_component.current_frame = (animation_component.current_frame + 1)
+                    % animation_component.frames.len() as u32;
+                update_sprite_frame =
+                    Some(animation_component.frames[animation_component.current_frame as usize]);
+            }
+            if let Some(update_sprite_frame) = update_sprite_frame {
+                let sprite_component: &mut SpriteComponent =
+                    ec_manager.get_component_mut(*entity).unwrap().unwrap();
+                sprite_component.sprite_index = update_sprite_frame;
+            }
         }
     }
 }
