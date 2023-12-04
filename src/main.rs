@@ -29,7 +29,7 @@ impl Game {
         let tree = registry.create_entity();
         let tank_1 = registry.create_entity();
         let tank_2 = registry.create_entity();
-        let helicopter = registry.create_entity();
+        let chopper = registry.create_entity();
         registry
             .add_component(
                 tree,
@@ -76,6 +76,15 @@ impl Game {
             .unwrap();
         registry
             .add_component(
+                tank_1,
+                components_systems::CollisionComponent {
+                    offset: glam::Vec2::new(0.0, 0.0),
+                    width_height: glam::Vec2::new(32.0, 32.0),
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
                 tank_2,
                 components_systems::RigidBodyComponent {
                     position: glam::Vec2::new(0.0, 100.0),
@@ -98,7 +107,16 @@ impl Game {
             .unwrap();
         registry
             .add_component(
-                helicopter,
+                tank_2,
+                components_systems::CollisionComponent {
+                    offset: glam::Vec2::new(0.0, 0.0),
+                    width_height: glam::Vec2::new(32.0, 32.0),
+                },
+            )
+            .unwrap();
+        registry
+            .add_component(
+                chopper,
                 components_systems::RigidBodyComponent {
                     position: glam::Vec2::new(0.0, 200.0),
                     velocity: glam::Vec2::new(10.0, -1.0),
@@ -107,7 +125,7 @@ impl Game {
             .unwrap();
         registry
             .add_component(
-                helicopter,
+                chopper,
                 components_systems::SpriteComponent {
                     sprite_index: renderer.load_sprite(Sprite::new(
                         "assets/images/chopper.png".into(),
@@ -120,7 +138,7 @@ impl Game {
             .unwrap();
         registry
             .add_component(
-                helicopter,
+                chopper,
                 components_systems::AnimationComponent::new(
                     1.0 / 15.0,
                     vec![
@@ -138,9 +156,19 @@ impl Game {
                 ),
             )
             .unwrap();
+        registry
+            .add_component(
+                chopper,
+                components_systems::CollisionComponent {
+                    offset: glam::Vec2::new(0.0, 0.0),
+                    width_height: glam::Vec2::new(32.0, 32.0),
+                },
+            )
+            .unwrap();
         registry.add_system(components_systems::MovementSystem::new());
         registry.add_system(components_systems::AnimationSystem::new());
         registry.add_system(components_systems::RenderSystem::new());
+        registry.add_system(components_systems::CollisionSystem::new());
 
         let mut game = Game { renderer, registry };
         game.load_map("assets/tilemaps/jungle.map");
@@ -191,6 +219,9 @@ impl Game {
     fn render(&mut self, delta_t: f32) {
         self.registry
             .run_system::<components_systems::MovementSystem>(delta_t)
+            .unwrap();
+        self.registry
+            .run_system::<components_systems::CollisionSystem>(delta_t)
             .unwrap();
         self.registry
             .run_system::<components_systems::AnimationSystem>(delta_t)

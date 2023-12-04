@@ -267,8 +267,11 @@ impl EntityComponentManager {
         }
     }
 
-    fn has_components(&self, entity: Entity) -> &HashSet<TypeId> {
-        self.entity_components.get(&entity).unwrap()
+    fn has_components(&self, entity: Entity) -> Result<&HashSet<TypeId>, EcsError> {
+        if self.is_dead(entity) {
+            return Err(EcsError::DeadEntity);
+        }
+        Ok(self.entity_components.get(&entity).unwrap())
     }
 
     fn entities_and_components(&self) -> impl Iterator<Item = (&Entity, &HashSet<TypeId>)> {
@@ -336,7 +339,7 @@ impl<'ec> EntityComponentWrapper<'ec> {
         self.ec_manager.get_component_mut(entity)
     }
 
-    pub fn has_components(&self, entity: Entity) -> &HashSet<TypeId> {
+    pub fn has_components(&self, entity: Entity) -> Result<&HashSet<TypeId>, EcsError> {
         self.ec_manager.has_components(entity)
     }
 
@@ -409,6 +412,7 @@ impl Registry {
                 if self
                     .ec_manager
                     .has_components(entity)
+                    .unwrap()
                     .is_superset(system.required_components())
                 {
                     system.add_entity(entity);
@@ -425,6 +429,7 @@ impl Registry {
                 if !self
                     .ec_manager
                     .has_components(entity)
+                    .unwrap()
                     .is_superset(system.required_components())
                 {
                     system.remove_entity(entity);
@@ -482,11 +487,12 @@ impl Registry {
         system.unwrap().run(&mut ec_wrapper, input);
         for entity in ec_wrapper.changed_entities() {
             for system in self.systems.values_mut() {
-                if ec_wrapper
-                    .has_components(*entity)
-                    .is_superset(system.required_components())
-                {
-                    system.add_entity(*entity);
+                if let Ok(has_components) = ec_wrapper.has_components(*entity) {
+                    if has_components.is_superset(system.required_components()) {
+                        system.add_entity(*entity);
+                    } else {
+                        system.remove_entity(*entity);
+                    }
                 } else {
                     system.remove_entity(*entity);
                 }
