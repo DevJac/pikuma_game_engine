@@ -308,9 +308,9 @@ impl SystemBase for CollisionSystem {
 }
 
 impl System for CollisionSystem {
-    type Input<'i> = f32;
+    type Input<'i> = &'i mut Renderer;
 
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, _delta_time: Self::Input<'_>) {
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, renderer: Self::Input<'_>) {
         let entities: Vec<&Entity> = self.entities.iter().collect();
         for a_index in 0..entities.len() {
             let entity_a = entities[a_index];
@@ -321,6 +321,10 @@ impl System for CollisionSystem {
                 ec_manager.get_component(*entity_a).unwrap().unwrap();
             let collision_a: &CollisionComponent =
                 ec_manager.get_component(*entity_a).unwrap().unwrap();
+            renderer.draw_rectangle(
+                (rigid_body_a.position + collision_a.offset).as_uvec2(),
+                collision_a.width_height.as_uvec2(),
+            );
             let world_space_collision_rectangle_a = Rectangle {
                 top_left: rigid_body_a.position + collision_a.offset,
                 bottom_right: rigid_body_a.position + collision_a.offset + collision_a.width_height,

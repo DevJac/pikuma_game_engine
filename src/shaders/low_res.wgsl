@@ -42,3 +42,8 @@ fn fragment_main(fragment: TextureFragment) -> @location(0) vec4f {
     );
     return textureSample(textures, textures_sampler, adjusted_uv, fragment.lower_right.z);
 }
+
+@fragment
+fn fragment_line(fragment: TextureFragment) -> @location(0) vec4f {
+    return vec4f(1.0, 1.0, 0.0, 1.0);
+}

@@ -78,8 +78,8 @@ impl Game {
             .add_component(
                 tank_1,
                 components_systems::CollisionComponent {
-                    offset: glam::Vec2::new(0.0, 0.0),
-                    width_height: glam::Vec2::new(32.0, 32.0),
+                    offset: glam::Vec2::new(6.0, 6.0),
+                    width_height: glam::Vec2::new(20.0, 20.0),
                 },
             )
             .unwrap();
@@ -109,8 +109,8 @@ impl Game {
             .add_component(
                 tank_2,
                 components_systems::CollisionComponent {
-                    offset: glam::Vec2::new(0.0, 0.0),
-                    width_height: glam::Vec2::new(32.0, 32.0),
+                    offset: glam::Vec2::new(6.0, 6.0),
+                    width_height: glam::Vec2::new(20.0, 20.0),
                 },
             )
             .unwrap();
@@ -160,8 +160,8 @@ impl Game {
             .add_component(
                 chopper,
                 components_systems::CollisionComponent {
-                    offset: glam::Vec2::new(0.0, 0.0),
-                    width_height: glam::Vec2::new(32.0, 32.0),
+                    offset: glam::Vec2::new(6.0, 6.0),
+                    width_height: glam::Vec2::new(20.0, 20.0),
                 },
             )
             .unwrap();
@@ -221,7 +221,7 @@ impl Game {
             .run_system::<components_systems::MovementSystem>(delta_t)
             .unwrap();
         self.registry
-            .run_system::<components_systems::CollisionSystem>(delta_t)
+            .run_system::<components_systems::CollisionSystem>(&mut self.renderer)
             .unwrap();
         self.registry
             .run_system::<components_systems::AnimationSystem>(delta_t)

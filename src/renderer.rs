@@ -68,6 +68,7 @@ const TEXTURE_VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
 ];
 
 const SQUARE_VERTS: u32 = 6;
+const SQUARE_OUTLINE_VERTS: u32 = 8;
 
 /// Normalized device coordinates (NDC)
 fn ndc_square() -> [Vertex; SQUARE_VERTS as usize] {
@@ -124,32 +125,64 @@ fn square(
     [v0, v1, v2, v2, v3, v0]
 }
 
-/// Counter-clockwise rotation matrix
-fn rotate_cc(angle_degrees: f32) -> glam::Mat2 {
-    let angle_radians = angle_degrees.to_radians();
-    glam::Mat2::from_cols_array(&[
-        angle_radians.cos(),
-        angle_radians.sin(),
-        -angle_radians.sin(),
-        angle_radians.cos(),
-    ])
+fn square_outline(
+    position: glam::UVec2,
+    width_height: glam::UVec2,
+) -> [TextureVertex; SQUARE_OUTLINE_VERTS as usize] {
+    let lower_right = glam::UVec3::new(width_height.x, width_height.y, 0);
+    let v0 = TextureVertex {
+        position: glam::Vec3::new(position.x as f32, position.y as f32, 0.0),
+        uv: glam::Vec2::new(0.0, 0.0),
+        lower_right,
+    };
+    let v1 = TextureVertex {
+        position: glam::Vec3::new(position.x as f32, (position.y + width_height.y) as f32, 0.0),
+        uv: glam::Vec2::new(0.0, 1.0),
+        lower_right,
+    };
+    let v2 = TextureVertex {
+        position: glam::Vec3::new(
+            (position.x + width_height.x) as f32,
+            (position.y + width_height.y) as f32,
+            0.0,
+        ),
+        uv: glam::Vec2::new(1.0, 1.0),
+        lower_right,
+    };
+    let v3 = TextureVertex {
+        position: glam::Vec3::new((position.x + width_height.x) as f32, position.y as f32, 0.0),
+        uv: glam::Vec2::new(1.0, 0.0),
+        lower_right,
+    };
+    [v0, v1, v1, v2, v2, v3, v3, v0]
 }
 
-// TODO: We need a better resource handling strategy
-#[derive(Clone, Copy)]
-pub enum TankOrTree {
-    Tank,
-    Tree,
-}
+/// Counter-clockwise rotation matrix
+// fn rotate_cc(angle_degrees: f32) -> glam::Mat2 {
+//     let angle_radians = angle_degrees.to_radians();
+//     glam::Mat2::from_cols_array(&[
+//         angle_radians.cos(),
+//         angle_radians.sin(),
+//         -angle_radians.sin(),
+//         angle_radians.cos(),
+//     ])
+// }
 
 struct LowResPass {
     low_res_texture: wgpu::Texture,
     low_res_texture_view: wgpu::TextureView,
+    // Sprite drawing
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     vertex_buffer_cpu: Vec<u8>,
     vertex_buffer: wgpu::Buffer,
     vertex_buffer_vert_count: u32,
+    // Line drawing
+    line_pipeline: wgpu::RenderPipeline,
+    line_bind_group: wgpu::BindGroup,
+    line_vertex_buffer_cpu: Vec<u8>,
+    line_vertex_buffer: wgpu::Buffer,
+    line_vertex_buffer_vert_count: u32,
     // Sprites
     sprites: wgpu::Texture,
     loaded_sprites: Vec<Sprite>,
@@ -282,6 +315,61 @@ impl LowResPass {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let line_vertex_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("low res line vertex buffer"),
+            size: 100_000,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let line_pipeline: wgpu::RenderPipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("low res line pipeline"),
+                layout: None,
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vertex_main",
+                    // TODO: We should use instance buffers for repeated values
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<TextureVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: TEXTURE_VERTEX_ATTRIBUTES,
+                    }],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::LineList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: true,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fragment_line",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: preferred_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview: None,
+            });
+        let line_bind_group: wgpu::BindGroup =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("low res line bind group"),
+                layout: &line_pipeline.get_bind_group_layout(0),
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &uniform_buffer,
+                        offset: 0,
+                        size: None,
+                    }),
+                }],
+            });
         Self {
             low_res_texture,
             low_res_texture_view,
@@ -292,6 +380,11 @@ impl LowResPass {
             vertex_buffer_vert_count: 0,
             sprites,
             loaded_sprites: Vec::new(),
+            line_pipeline,
+            line_bind_group,
+            line_vertex_buffer_cpu: Vec::new(),
+            line_vertex_buffer,
+            line_vertex_buffer_vert_count: 0,
         }
     }
 
@@ -353,8 +446,14 @@ impl LowResPass {
         self.vertex_buffer_vert_count += 1;
     }
 
+    fn draw_rectangle(&mut self, location: glam::UVec2, width_height: glam::UVec2) {
+        let square_vertices = square_outline(location, width_height);
+        let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
+        self.line_vertex_buffer_cpu.extend_from_slice(square_bytes);
+        self.line_vertex_buffer_vert_count += 1;
+    }
+
     fn draw(&mut self, queue: &wgpu::Queue, command_encoder: &mut wgpu::CommandEncoder) {
-        queue.write_buffer(&self.vertex_buffer, 0, self.vertex_buffer_cpu.as_slice());
         let mut pass: wgpu::RenderPass =
             command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("low res render pass"),
@@ -375,12 +474,29 @@ impl LowResPass {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+        // Draw sprites
+        queue.write_buffer(&self.vertex_buffer, 0, self.vertex_buffer_cpu.as_slice());
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.draw(0..self.vertex_buffer_vert_count * SQUARE_VERTS, 0..1);
         self.vertex_buffer_cpu.clear();
         self.vertex_buffer_vert_count = 0;
+        // Draw lines
+        queue.write_buffer(
+            &self.line_vertex_buffer,
+            0,
+            self.line_vertex_buffer_cpu.as_slice(),
+        );
+        pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
+        pass.set_pipeline(&self.line_pipeline);
+        pass.set_bind_group(0, &self.line_bind_group, &[]);
+        pass.draw(
+            0..self.line_vertex_buffer_vert_count * SQUARE_OUTLINE_VERTS,
+            0..1,
+        );
+        self.line_vertex_buffer_cpu.clear();
+        self.line_vertex_buffer_vert_count = 0;
     }
 }
 
@@ -592,7 +708,11 @@ impl Renderer {
 
     pub fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::UVec2) {
         self.low_res_pass
-            .draw_image(sprite_index, sprite_z, location);
+            .draw_image(sprite_index, sprite_z, location)
+    }
+
+    pub fn draw_rectangle(&mut self, location: glam::UVec2, width_height: glam::UVec2) {
+        self.low_res_pass.draw_rectangle(location, width_height)
     }
 
     pub fn draw(&mut self) {
