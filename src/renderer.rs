@@ -342,7 +342,7 @@ impl LowResPass {
                     cull_mode: None,
                     unclipped_depth: false,
                     polygon_mode: wgpu::PolygonMode::Fill,
-                    conservative: true,
+                    conservative: false,
                 },
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
