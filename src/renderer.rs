@@ -147,8 +147,9 @@ struct LowResPass {
     low_res_texture_view: wgpu::TextureView,
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
+    vertex_buffer_cpu: Vec<u8>,
     vertex_buffer: wgpu::Buffer,
-    draw_buffer_square_index: u32,
+    vertex_buffer_vert_count: u32,
     // Sprites
     sprites: wgpu::Texture,
     loaded_sprites: Vec<Sprite>,
@@ -286,8 +287,9 @@ impl LowResPass {
             low_res_texture_view,
             pipeline,
             bind_group,
+            vertex_buffer_cpu: Vec::new(),
             vertex_buffer,
-            draw_buffer_square_index: 0,
+            vertex_buffer_vert_count: 0,
             sprites,
             loaded_sprites: Vec::new(),
         }
@@ -342,26 +344,17 @@ impl LowResPass {
         SpriteIndex(sprite_index)
     }
 
-    fn draw_image(
-        &mut self,
-        queue: &wgpu::Queue,
-        sprite_index: SpriteIndex,
-        sprite_z: f32,
-        location: glam::UVec2,
-    ) {
+    fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::UVec2) {
         let sprite_width_height: glam::UVec2 =
             self.loaded_sprites[sprite_index.0 as usize].width_height;
         let square_vertices = square(location, sprite_z, sprite_width_height, sprite_index.0);
         let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
-        queue.write_buffer(
-            &self.vertex_buffer,
-            self.draw_buffer_square_index as u64 * square_bytes.len() as u64,
-            square_bytes,
-        );
-        self.draw_buffer_square_index += 1;
+        self.vertex_buffer_cpu.extend_from_slice(square_bytes);
+        self.vertex_buffer_vert_count += 1;
     }
 
-    fn draw(&mut self, command_encoder: &mut wgpu::CommandEncoder) {
+    fn draw(&mut self, queue: &wgpu::Queue, command_encoder: &mut wgpu::CommandEncoder) {
+        queue.write_buffer(&self.vertex_buffer, 0, self.vertex_buffer_cpu.as_slice());
         let mut pass: wgpu::RenderPass =
             command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("low res render pass"),
@@ -385,8 +378,9 @@ impl LowResPass {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..self.draw_buffer_square_index * SQUARE_VERTS, 0..1);
-        self.draw_buffer_square_index = 0;
+        pass.draw(0..self.vertex_buffer_vert_count * SQUARE_VERTS, 0..1);
+        self.vertex_buffer_cpu.clear();
+        self.vertex_buffer_vert_count = 0;
     }
 }
 
@@ -598,7 +592,7 @@ impl Renderer {
 
     pub fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::UVec2) {
         self.low_res_pass
-            .draw_image(&self.queue, sprite_index, sprite_z, location);
+            .draw_image(sprite_index, sprite_z, location);
     }
 
     pub fn draw(&mut self) {
@@ -611,7 +605,7 @@ impl Renderer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("command encoder"),
                 });
-        self.low_res_pass.draw(&mut command_encoder);
+        self.low_res_pass.draw(&self.queue, &mut command_encoder);
         self.surface_pass.draw(&mut command_encoder, &surface_view);
         self.queue.submit([command_encoder.finish()]);
         surface_texture.present();
