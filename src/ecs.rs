@@ -1,6 +1,8 @@
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
 
+use crate::event_bus::{EventBus, Handler};
+
 type IndexT = u32;
 type GenerationT = u32;
 
@@ -365,12 +367,19 @@ pub trait SystemBase {
 
 pub trait System: SystemBase {
     type Input<'i>;
-    fn run<'i>(&self, ec_manager: &mut EntityComponentWrapper, input: Self::Input<'i>);
+
+    fn run<'i>(
+        &self,
+        ec_manager: &mut EntityComponentWrapper,
+        event_bus: &mut EventBus,
+        input: Self::Input<'i>,
+    );
 }
 
 pub struct Registry {
     ec_manager: EntityComponentManager,
     systems: HashMap<TypeId, Box<dyn SystemBase>>,
+    event_bus: EventBus,
 }
 
 impl Registry {
@@ -378,6 +387,7 @@ impl Registry {
         Self {
             ec_manager: EntityComponentManager::new(),
             systems: HashMap::new(),
+            event_bus: EventBus::new(),
         }
     }
 
@@ -484,7 +494,9 @@ impl Registry {
         if system.is_none() {
             return Err(EcsError::NoSuchSystem);
         }
-        system.unwrap().run(&mut ec_wrapper, input);
+        system
+            .unwrap()
+            .run(&mut ec_wrapper, &mut self.event_bus, input);
         for entity in ec_wrapper.changed_entities() {
             for system in self.systems.values_mut() {
                 if let Ok(has_components) = ec_wrapper.has_components(*entity) {
@@ -499,6 +511,10 @@ impl Registry {
             }
         }
         Ok(())
+    }
+
+    pub fn add_handler<E: 'static, H: Handler<E> + 'static>(&mut self, handler: H) {
+        self.event_bus.add_handler(handler)
     }
 
     pub fn entities(&self) -> impl Iterator<Item = &Entity> {

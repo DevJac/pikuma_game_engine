@@ -1,12 +1,13 @@
+use crate::ecs::EntityComponentWrapper;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
 pub trait HandlerBase {
-    fn handle_any(&mut self, event: &dyn Any);
+    fn handle_any(&mut self, ec_manager: &mut EntityComponentWrapper, event: &dyn Any);
 }
 
 pub trait Handler<E>: HandlerBase {
-    fn handle(&mut self, event: E);
+    fn handle(&mut self, ec_manager: &mut EntityComponentWrapper, event: &E);
 }
 
 pub struct EventBus {
@@ -32,11 +33,11 @@ impl EventBus {
         }
     }
 
-    pub fn dispatch<E: 'static>(&mut self, event: &'static E) {
+    pub fn dispatch<E: 'static>(&mut self, ec_manager: &mut EntityComponentWrapper, event: E) {
         let type_id = TypeId::of::<E>();
         if let Some(handlers) = self.handlers.get_mut(&type_id) {
             for handler in handlers {
-                handler.handle_any(&event);
+                handler.handle_any(ec_manager, &event);
             }
         }
     }

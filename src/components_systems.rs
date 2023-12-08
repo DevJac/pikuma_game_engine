@@ -1,5 +1,6 @@
 use crate::{
     ecs::{Entity, EntityComponentWrapper, System, SystemBase},
+    event_bus::{EventBus, Handler, HandlerBase},
     renderer::{Renderer, SpriteIndex},
 };
 
@@ -50,7 +51,12 @@ impl SystemBase for MovementSystem {
 impl System for MovementSystem {
     type Input<'i> = f32;
 
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, delta_time: Self::Input<'_>) {
+    fn run(
+        &self,
+        ec_manager: &mut EntityComponentWrapper,
+        _event_bus: &mut EventBus,
+        delta_time: Self::Input<'_>,
+    ) {
         for entity in self.entities.iter() {
             let rigid_body_component: &mut RigidBodyComponent =
                 ec_manager.get_component_mut(*entity).unwrap().unwrap();
@@ -124,7 +130,12 @@ impl SystemBase for RenderSystem {
 impl System for RenderSystem {
     type Input<'i> = &'i mut Renderer;
 
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, renderer: Self::Input<'_>) {
+    fn run(
+        &self,
+        ec_manager: &mut EntityComponentWrapper,
+        _event_bus: &mut EventBus,
+        renderer: Self::Input<'_>,
+    ) {
         let mut components: Vec<(&RigidBodyComponent, &SpriteComponent)> = self
             .entities
             .iter()
@@ -213,7 +224,12 @@ impl SystemBase for AnimationSystem {
 impl System for AnimationSystem {
     type Input<'i> = f32;
 
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, delta_time: Self::Input<'_>) {
+    fn run(
+        &self,
+        ec_manager: &mut EntityComponentWrapper,
+        _event_bus: &mut EventBus,
+        delta_time: Self::Input<'_>,
+    ) {
         for entity in self.entities.iter() {
             let animation_component: &mut AnimationComponent =
                 ec_manager.get_component_mut(*entity).unwrap().unwrap();
@@ -238,6 +254,11 @@ impl System for AnimationSystem {
 ///////////////////////////////////////////////////////////////////////////////
 // Collision
 ///////////////////////////////////////////////////////////////////////////////
+
+pub struct CollisionEvent {
+    pub entity_a: Entity,
+    pub entity_b: Entity,
+}
 
 pub struct Rectangle {
     top_left: glam::Vec2,
@@ -310,7 +331,12 @@ impl SystemBase for CollisionSystem {
 impl System for CollisionSystem {
     type Input<'i> = &'i mut Renderer;
 
-    fn run(&self, ec_manager: &mut EntityComponentWrapper, renderer: Self::Input<'_>) {
+    fn run(
+        &self,
+        ec_manager: &mut EntityComponentWrapper,
+        event_bus: &mut EventBus,
+        renderer: Self::Input<'_>,
+    ) {
         let entities: Vec<&Entity> = self.entities.iter().collect();
         for a_index in 0..entities.len() {
             let entity_a = entities[a_index];
@@ -347,10 +373,32 @@ impl System for CollisionSystem {
                 if world_space_collision_rectangle_a
                     .collides_with(&world_space_collision_rectangle_b)
                 {
-                    ec_manager.remove_entity(*entity_a).unwrap();
-                    ec_manager.remove_entity(*entity_b).unwrap();
+                    event_bus.dispatch(
+                        ec_manager,
+                        CollisionEvent {
+                            entity_a: *entity_a,
+                            entity_b: *entity_b,
+                        },
+                    );
                 }
             }
         }
+    }
+}
+
+impl HandlerBase for CollisionSystem {
+    fn handle_any(&mut self, ec_manager: &mut EntityComponentWrapper, event: &dyn std::any::Any) {
+        self.handle(ec_manager, event.downcast_ref().unwrap())
+    }
+}
+
+impl Handler<CollisionEvent> for CollisionSystem {
+    fn handle(
+        &mut self,
+        ec_manager: &mut EntityComponentWrapper,
+        collision_event: &CollisionEvent,
+    ) {
+        ec_manager.remove_entity(collision_event.entity_a).unwrap();
+        ec_manager.remove_entity(collision_event.entity_b).unwrap();
     }
 }
