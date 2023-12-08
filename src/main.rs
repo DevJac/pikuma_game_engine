@@ -12,16 +12,18 @@
 // TODO: Come up with something better than unwrap-based error handling
 use pikuma_game_engine::fps_stats::FPSStats;
 use pikuma_game_engine::renderer::Sprite;
-use pikuma_game_engine::{components_systems, ecs, renderer};
+use pikuma_game_engine::{components_systems, ecs, event_bus, renderer};
 use std::io::BufRead as _;
 
 struct Game {
     renderer: renderer::Renderer,
+    event_bus: event_bus::EventBus,
     registry: ecs::Registry,
 }
 
 impl Game {
     fn new(window: winit::window::Window, width: u32, height: u32) -> Self {
+        let event_bus = event_bus::EventBus::new();
         let mut registry = ecs::Registry::new();
         let mut renderer = renderer::Renderer::new(window, width, height);
         renderer.configure_surface();
@@ -170,7 +172,11 @@ impl Game {
         registry.add_system(components_systems::RenderSystem::new());
         registry.add_system(components_systems::CollisionSystem::new());
 
-        let mut game = Game { renderer, registry };
+        let mut game = Game {
+            renderer,
+            event_bus,
+            registry,
+        };
         game.load_map("assets/tilemaps/jungle.map");
         game
     }
