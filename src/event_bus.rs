@@ -1,6 +1,8 @@
 use crate::ecs::EntityComponentWrapper;
 use std::any::{Any, TypeId};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub trait HandlerBase {
     fn handle_any(&mut self, ec_manager: &mut EntityComponentWrapper, event: &dyn Any);
@@ -11,7 +13,7 @@ pub trait Handler<E>: HandlerBase {
 }
 
 pub struct EventBus {
-    handlers: HashMap<TypeId, Vec<Box<dyn HandlerBase>>>,
+    handlers: HashMap<TypeId, Vec<Rc<RefCell<dyn HandlerBase>>>>,
 }
 
 impl EventBus {
@@ -21,24 +23,29 @@ impl EventBus {
         }
     }
 
-    pub fn add_handler<E: 'static, H: Handler<E> + 'static>(&mut self, handler: H) {
+    pub fn add_handler<E: 'static, H: Handler<E> + 'static>(&mut self, handler: Rc<RefCell<H>>) {
         let type_id = TypeId::of::<E>();
         match self.handlers.get_mut(&type_id) {
             None => {
-                self.handlers.insert(type_id, vec![Box::new(handler)]);
+                self.handlers.insert(type_id, vec![handler]);
             }
             Some(handlers) => {
-                handlers.push(Box::new(handler));
+                handlers.push(handler);
             }
         }
     }
 
-    pub fn dispatch<E: 'static>(&mut self, ec_manager: &mut EntityComponentWrapper, event: E) {
-        let type_id = TypeId::of::<E>();
+    pub fn dispatch(
+        &mut self,
+        ec_manager: &mut EntityComponentWrapper,
+        type_id: TypeId,
+        event: &dyn Any,
+    ) {
         if let Some(handlers) = self.handlers.get_mut(&type_id) {
             for handler in handlers {
-                handler.handle_any(ec_manager, &event);
+                handler.borrow_mut().handle_any(ec_manager, event);
             }
+        } else {
         }
     }
 }

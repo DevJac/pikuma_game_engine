@@ -13,7 +13,9 @@
 use pikuma_game_engine::fps_stats::FPSStats;
 use pikuma_game_engine::renderer::Sprite;
 use pikuma_game_engine::{components_systems, ecs, renderer};
+use std::cell::RefCell;
 use std::io::BufRead as _;
+use std::rc::Rc;
 
 struct Game {
     renderer: renderer::Renderer,
@@ -119,7 +121,7 @@ impl Game {
                 chopper,
                 components_systems::RigidBodyComponent {
                     position: glam::Vec2::new(0.0, 200.0),
-                    velocity: glam::Vec2::new(10.0, -1.0),
+                    velocity: glam::Vec2::new(10.0, -3.0),
                 },
             )
             .unwrap();
@@ -165,11 +167,17 @@ impl Game {
                 },
             )
             .unwrap();
-        registry.add_system(components_systems::MovementSystem::new());
-        registry.add_system(components_systems::AnimationSystem::new());
-        registry.add_system(components_systems::RenderSystem::new());
-        let collision_system = components_systems::CollisionSystem::new();
-        registry.add_handler(collision_system);
+        registry.add_system(Rc::new(RefCell::new(
+            components_systems::MovementSystem::new(),
+        )));
+        registry.add_system(Rc::new(RefCell::new(
+            components_systems::AnimationSystem::new(),
+        )));
+        registry.add_system(Rc::new(RefCell::new(
+            components_systems::RenderSystem::new(),
+        )));
+        let collision_system = Rc::new(RefCell::new(components_systems::CollisionSystem::new()));
+        registry.add_handler(Rc::clone(&collision_system));
         registry.add_system(collision_system);
 
         let mut game = Game { renderer, registry };

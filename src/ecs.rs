@@ -1,5 +1,7 @@
 use std::any::{Any, TypeId};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::event_bus::{EventBus, Handler};
 
@@ -284,6 +286,7 @@ impl EntityComponentManager {
 pub struct EntityComponentWrapper<'ec> {
     ec_manager: &'ec mut EntityComponentManager,
     changed_entities: HashSet<Entity>,
+    dispatched_events: Vec<(TypeId, Box<dyn Any>)>,
 }
 
 impl<'ec> EntityComponentWrapper<'ec> {
@@ -291,6 +294,7 @@ impl<'ec> EntityComponentWrapper<'ec> {
         Self {
             ec_manager,
             changed_entities: HashSet::new(),
+            dispatched_events: Vec::new(),
         }
     }
 
@@ -356,6 +360,11 @@ impl<'ec> EntityComponentWrapper<'ec> {
     pub fn changed_entities(&self) -> impl Iterator<Item = &Entity> {
         self.changed_entities.iter()
     }
+
+    pub fn dispatch_event<E: 'static>(&mut self, event: E) {
+        self.dispatched_events
+            .push((TypeId::of::<E>(), Box::new(event)));
+    }
 }
 
 pub trait SystemBase {
@@ -368,17 +377,12 @@ pub trait SystemBase {
 pub trait System: SystemBase {
     type Input<'i>;
 
-    fn run<'i>(
-        &self,
-        ec_manager: &mut EntityComponentWrapper,
-        event_bus: &mut EventBus,
-        input: Self::Input<'i>,
-    );
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, input: Self::Input<'_>);
 }
 
 pub struct Registry {
     ec_manager: EntityComponentManager,
-    systems: HashMap<TypeId, Box<dyn SystemBase>>,
+    systems: HashMap<TypeId, Rc<RefCell<dyn SystemBase>>>,
     event_bus: EventBus,
 }
 
@@ -398,7 +402,7 @@ impl Registry {
 
     pub fn remove_entity(&mut self, entity: Entity) -> Result<(), EcsError> {
         for system in self.systems.values_mut() {
-            system.remove_entity(entity);
+            system.borrow_mut().remove_entity(entity);
         }
         self.ec_manager.remove_entity(entity)
     }
@@ -423,9 +427,9 @@ impl Registry {
                     .ec_manager
                     .has_components(entity)
                     .unwrap()
-                    .is_superset(system.required_components())
+                    .is_superset(system.borrow().required_components())
                 {
-                    system.add_entity(entity);
+                    system.borrow_mut().add_entity(entity);
                 }
             }
         }
@@ -440,9 +444,9 @@ impl Registry {
                     .ec_manager
                     .has_components(entity)
                     .unwrap()
-                    .is_superset(system.required_components())
+                    .is_superset(system.borrow().required_components())
                 {
-                    system.remove_entity(entity);
+                    system.borrow_mut().remove_entity(entity);
                 }
             }
         }
@@ -463,14 +467,14 @@ impl Registry {
         self.ec_manager.get_component_mut(entity)
     }
 
-    pub fn add_system<S: System + 'static>(&mut self, mut system: S) {
+    pub fn add_system<S: System + 'static>(&mut self, system: Rc<RefCell<S>>) {
         for (entity, components) in self.ec_manager.entities_and_components() {
-            if components.is_superset(system.required_components()) {
-                system.add_entity(*entity);
+            if components.is_superset(system.borrow().required_components()) {
+                system.borrow_mut().add_entity(*entity);
             }
         }
         let type_id: TypeId = TypeId::of::<S>();
-        self.systems.insert(type_id, Box::new(system));
+        self.systems.insert(type_id, system);
     }
 
     pub fn remove_system<S: System + 'static>(&mut self) {
@@ -479,11 +483,16 @@ impl Registry {
     }
 
     fn get_system<S: System + 'static>(
-        systems: &HashMap<TypeId, Box<dyn SystemBase>>,
-    ) -> Option<&S> {
+        systems: &HashMap<TypeId, Rc<RefCell<dyn SystemBase>>>,
+    ) -> Option<Rc<RefCell<S>>> {
         let type_id = TypeId::of::<S>();
-        if let Some(system_any) = systems.get(&type_id) {
-            return system_any.as_any().downcast_ref::<S>();
+        if let Some(system_base) = systems.get(&type_id) {
+            let system_base = Rc::clone(system_base);
+            if system_base.borrow().as_any().downcast_ref::<S>().is_some() {
+                unsafe {
+                    return Some(Rc::from_raw(Rc::into_raw(system_base).cast()));
+                }
+            }
         }
         None
     }
@@ -494,26 +503,36 @@ impl Registry {
         if system.is_none() {
             return Err(EcsError::NoSuchSystem);
         }
-        system
-            .unwrap()
-            .run(&mut ec_wrapper, &mut self.event_bus, input);
+        system.unwrap().borrow().run(&mut ec_wrapper, input);
+        loop {
+            let dispatched_events =
+                std::mem::replace(&mut ec_wrapper.dispatched_events, Vec::new());
+            if dispatched_events.len() == 0 {
+                break;
+            }
+            for event in dispatched_events {
+                let e0: TypeId = event.0;
+                let e1: Box<dyn Any> = event.1;
+                self.event_bus.dispatch(&mut ec_wrapper, e0, &*e1);
+            }
+        }
         for entity in ec_wrapper.changed_entities() {
             for system in self.systems.values_mut() {
                 if let Ok(has_components) = ec_wrapper.has_components(*entity) {
-                    if has_components.is_superset(system.required_components()) {
-                        system.add_entity(*entity);
+                    if has_components.is_superset(system.borrow().required_components()) {
+                        system.borrow_mut().add_entity(*entity);
                     } else {
-                        system.remove_entity(*entity);
+                        system.borrow_mut().remove_entity(*entity);
                     }
                 } else {
-                    system.remove_entity(*entity);
+                    system.borrow_mut().remove_entity(*entity);
                 }
             }
         }
         Ok(())
     }
 
-    pub fn add_handler<E: 'static, H: Handler<E> + 'static>(&mut self, handler: H) {
+    pub fn add_handler<E: 'static, H: Handler<E> + 'static>(&mut self, handler: Rc<RefCell<H>>) {
         self.event_bus.add_handler(handler)
     }
 
@@ -663,7 +682,7 @@ mod tests {
         registry
             .add_component(e, CounterComponent { count: 0 })
             .unwrap();
-        registry.add_system(system);
+        registry.add_system(Rc::new(RefCell::new(system)));
         assert_eq!(
             registry
                 .get_component::<CounterComponent>(e)
