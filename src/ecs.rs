@@ -504,6 +504,50 @@ impl Registry {
             return Err(EcsError::NoSuchSystem);
         }
         system.unwrap().borrow().run(&mut ec_wrapper, input);
+        for entity in ec_wrapper.changed_entities() {
+            for system in self.systems.values_mut() {
+                if let Ok(has_components) = ec_wrapper.has_components(*entity) {
+                    if has_components.is_superset(system.borrow().required_components()) {
+                        system.borrow_mut().add_entity(*entity);
+                    } else {
+                        system.borrow_mut().remove_entity(*entity);
+                    }
+                } else {
+                    system.borrow_mut().remove_entity(*entity);
+                }
+            }
+        }
+        loop {
+            let dispatched_events =
+                std::mem::replace(&mut ec_wrapper.dispatched_events, Vec::new());
+            if dispatched_events.len() == 0 {
+                break;
+            }
+            for event in dispatched_events {
+                let e0: TypeId = event.0;
+                let e1: Box<dyn Any> = event.1;
+                self.event_bus.dispatch(&mut ec_wrapper, e0, &*e1);
+                for entity in ec_wrapper.changed_entities() {
+                    for system in self.systems.values_mut() {
+                        if let Ok(has_components) = ec_wrapper.has_components(*entity) {
+                            if has_components.is_superset(system.borrow().required_components()) {
+                                system.borrow_mut().add_entity(*entity);
+                            } else {
+                                system.borrow_mut().remove_entity(*entity);
+                            }
+                        } else {
+                            system.borrow_mut().remove_entity(*entity);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn dispatch_event<E: 'static>(&mut self, event: E) {
+        let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
+        ec_wrapper.dispatch_event(event);
         loop {
             let dispatched_events =
                 std::mem::replace(&mut ec_wrapper.dispatched_events, Vec::new());
@@ -529,7 +573,6 @@ impl Registry {
                 }
             }
         }
-        Ok(())
     }
 
     pub fn add_handler<E: 'static, H: Handler<E> + 'static>(&mut self, handler: Rc<RefCell<H>>) {

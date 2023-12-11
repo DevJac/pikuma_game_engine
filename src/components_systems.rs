@@ -1,3 +1,5 @@
+use winit::keyboard::{KeyCode, PhysicalKey};
+
 use crate::{
     ecs::{Entity, EntityComponentWrapper, System, SystemBase},
     event_bus::{Handler, HandlerBase},
@@ -281,6 +283,7 @@ pub struct CollisionComponent {
 pub struct CollisionSystem {
     required_components: std::collections::HashSet<std::any::TypeId>,
     entities: std::collections::HashSet<Entity>,
+    render_collision_boxes: bool,
 }
 
 impl CollisionSystem {
@@ -291,6 +294,7 @@ impl CollisionSystem {
         Self {
             required_components,
             entities: std::collections::HashSet::new(),
+            render_collision_boxes: false,
         }
     }
 }
@@ -327,10 +331,12 @@ impl System for CollisionSystem {
                 ec_manager.get_component(*entity_a).unwrap().unwrap();
             let collision_a: &CollisionComponent =
                 ec_manager.get_component(*entity_a).unwrap().unwrap();
-            renderer.draw_rectangle(
-                (rigid_body_a.position + collision_a.offset).as_uvec2(),
-                collision_a.width_height.as_uvec2(),
-            );
+            if self.render_collision_boxes {
+                renderer.draw_rectangle(
+                    (rigid_body_a.position + collision_a.offset).as_uvec2(),
+                    collision_a.width_height.as_uvec2(),
+                );
+            }
             let world_space_collision_rectangle_a = Rectangle {
                 top_left: rigid_body_a.position + collision_a.offset,
                 bottom_right: rigid_body_a.position + collision_a.offset + collision_a.width_height,
@@ -365,7 +371,12 @@ impl System for CollisionSystem {
 
 impl HandlerBase for CollisionSystem {
     fn handle_any(&mut self, ec_manager: &mut EntityComponentWrapper, event: &dyn std::any::Any) {
-        self.handle(ec_manager, event.downcast_ref().unwrap())
+        if let Some(event) = event.downcast_ref::<CollisionEvent>() {
+            self.handle(ec_manager, event);
+        }
+        if let Some(event) = event.downcast_ref::<PhysicalKey>() {
+            self.handle(ec_manager, event);
+        }
     }
 }
 
@@ -377,5 +388,13 @@ impl Handler<CollisionEvent> for CollisionSystem {
     ) {
         ec_manager.remove_entity(collision_event.entity_a).unwrap();
         ec_manager.remove_entity(collision_event.entity_b).unwrap();
+    }
+}
+
+impl Handler<PhysicalKey> for CollisionSystem {
+    fn handle(&mut self, _ec_manager: &mut EntityComponentWrapper, event: &PhysicalKey) {
+        if let PhysicalKey::Code(KeyCode::KeyD) = event {
+            self.render_collision_boxes = !self.render_collision_boxes;
+        }
     }
 }

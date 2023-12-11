@@ -20,6 +20,7 @@ use std::rc::Rc;
 struct Game {
     renderer: renderer::Renderer,
     registry: ecs::Registry,
+    pressed_keys: std::collections::HashSet<winit::keyboard::PhysicalKey>,
 }
 
 impl Game {
@@ -177,10 +178,15 @@ impl Game {
             components_systems::RenderSystem::new(),
         )));
         let collision_system = Rc::new(RefCell::new(components_systems::CollisionSystem::new()));
-        registry.add_handler(Rc::clone(&collision_system));
+        registry.add_handler::<components_systems::CollisionEvent, _>(Rc::clone(&collision_system));
+        registry.add_handler::<winit::keyboard::PhysicalKey, _>(Rc::clone(&collision_system));
         registry.add_system(collision_system);
 
-        let mut game = Game { renderer, registry };
+        let mut game = Game {
+            renderer,
+            registry,
+            pressed_keys: std::collections::HashSet::new(),
+        };
         game.load_map("assets/tilemaps/jungle.map");
         game
     }
@@ -241,6 +247,20 @@ impl Game {
             .unwrap();
         self.renderer.draw();
     }
+
+    fn key_event(&mut self, key_event: winit::event::RawKeyEvent) {
+        match key_event.state {
+            winit::event::ElementState::Pressed => {
+                let new_keypress = self.pressed_keys.insert(key_event.physical_key);
+                if new_keypress {
+                    self.registry.dispatch_event(key_event.physical_key);
+                }
+            }
+            winit::event::ElementState::Released => {
+                self.pressed_keys.remove(&key_event.physical_key);
+            }
+        }
+    }
 }
 
 fn main() {
@@ -258,60 +278,60 @@ fn main() {
     let mut render_time_stats = FPSStats::new(1.0);
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     event_loop
-        .run(move |event, event_loop_window_target| {
-            match event {
-                winit::event::Event::WindowEvent {
-                    window_id: _,
-                    event: window_event,
-                } => match window_event {
-                    winit::event::WindowEvent::CloseRequested => {
-                        event_loop_window_target.exit();
-                    }
-                    winit::event::WindowEvent::KeyboardInput {
-                        device_id: _,
-                        event:
-                            winit::event::KeyEvent {
-                                physical_key: _,
-                                logical_key:
-                                    winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape),
-                                text: _,
-                                location: _,
-                                state: _,
-                                repeat: _,
-                                ..
-                            },
-                        is_synthetic: _,
-                    } => {
-                        event_loop_window_target.exit();
-                    }
-                    winit::event::WindowEvent::Resized(_) => {
-                        game.configure_surface();
-                    }
-                    _ => {}
-                },
-                winit::event::Event::DeviceEvent {
-                    device_id: _,
-                    event: _device_event,
-                } => {
-                    // TODO: Handle button presses
-                    // TODO: Track button states
+        .run(move |event, event_loop_window_target| match event {
+            winit::event::Event::WindowEvent {
+                window_id: _,
+                event: window_event,
+            } => match window_event {
+                winit::event::WindowEvent::CloseRequested => {
+                    event_loop_window_target.exit();
                 }
-                winit::event::Event::AboutToWait => {
-                    game.render(frame_render_seconds);
-                    let now = std::time::Instant::now();
-                    frame_render_seconds = (now - last_render_time).as_secs_f32();
-                    render_time_stats.update(frame_render_seconds);
-                    last_render_time = now;
-                    if now - last_fps_log_time > std::time::Duration::from_secs(10) {
-                        last_fps_log_time = now;
-                        let fps = 1.0 / render_time_stats.mean();
-                        let fps_std = render_time_stats.std() / render_time_stats.mean().powi(2);
-                        let fps_99th = 1.0 / render_time_stats.percentile_99();
-                        log::info!("FPS: {:.0} ({:.0} ± {:.0})", fps_99th, fps, fps_std);
-                    }
+                winit::event::WindowEvent::KeyboardInput {
+                    device_id: _,
+                    event:
+                        winit::event::KeyEvent {
+                            physical_key: _,
+                            logical_key:
+                                winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape),
+                            text: _,
+                            location: _,
+                            state: _,
+                            repeat: _,
+                            ..
+                        },
+                    is_synthetic: _,
+                } => {
+                    event_loop_window_target.exit();
+                }
+                winit::event::WindowEvent::Resized(_) => {
+                    game.configure_surface();
                 }
                 _ => {}
+            },
+            winit::event::Event::DeviceEvent {
+                device_id: _,
+                event: device_event,
+            } => match device_event {
+                winit::event::DeviceEvent::Key(raw_key_event) => {
+                    game.key_event(raw_key_event);
+                }
+                _ => {}
+            },
+            winit::event::Event::AboutToWait => {
+                game.render(frame_render_seconds);
+                let now = std::time::Instant::now();
+                frame_render_seconds = (now - last_render_time).as_secs_f32();
+                render_time_stats.update(frame_render_seconds);
+                last_render_time = now;
+                if now - last_fps_log_time > std::time::Duration::from_secs(10) {
+                    last_fps_log_time = now;
+                    let fps = 1.0 / render_time_stats.mean();
+                    let fps_std = render_time_stats.std() / render_time_stats.mean().powi(2);
+                    let fps_99th = 1.0 / render_time_stats.percentile_99();
+                    log::info!("FPS: {:.0} ({:.0} ± {:.0})", fps_99th, fps, fps_std);
+                }
             }
+            _ => {}
         })
         .unwrap();
 }
