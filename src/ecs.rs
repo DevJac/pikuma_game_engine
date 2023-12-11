@@ -497,15 +497,12 @@ impl Registry {
         None
     }
 
-    pub fn run_system<S: System + 'static>(&mut self, input: S::Input<'_>) -> Result<(), EcsError> {
-        let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
-        let system = Self::get_system::<S>(&self.systems);
-        if system.is_none() {
-            return Err(EcsError::NoSuchSystem);
-        }
-        system.unwrap().borrow().run(&mut ec_wrapper, input);
+    fn update_system_entities(
+        systems: &mut HashMap<TypeId, Rc<RefCell<dyn SystemBase>>>,
+        ec_wrapper: &mut EntityComponentWrapper,
+    ) {
         for entity in ec_wrapper.changed_entities() {
-            for system in self.systems.values_mut() {
+            for system in systems.values_mut() {
                 if let Ok(has_components) = ec_wrapper.has_components(*entity) {
                     if has_components.is_superset(system.borrow().required_components()) {
                         system.borrow_mut().add_entity(*entity);
@@ -517,6 +514,16 @@ impl Registry {
                 }
             }
         }
+    }
+
+    pub fn run_system<S: System + 'static>(&mut self, input: S::Input<'_>) -> Result<(), EcsError> {
+        let mut ec_wrapper = EntityComponentWrapper::new(&mut self.ec_manager);
+        let system = Self::get_system::<S>(&self.systems);
+        if system.is_none() {
+            return Err(EcsError::NoSuchSystem);
+        }
+        system.unwrap().borrow().run(&mut ec_wrapper, input);
+        Self::update_system_entities(&mut self.systems, &mut ec_wrapper);
         loop {
             let dispatched_events =
                 std::mem::replace(&mut ec_wrapper.dispatched_events, Vec::new());
@@ -527,19 +534,7 @@ impl Registry {
                 let e0: TypeId = event.0;
                 let e1: Box<dyn Any> = event.1;
                 self.event_bus.dispatch(&mut ec_wrapper, e0, &*e1);
-                for entity in ec_wrapper.changed_entities() {
-                    for system in self.systems.values_mut() {
-                        if let Ok(has_components) = ec_wrapper.has_components(*entity) {
-                            if has_components.is_superset(system.borrow().required_components()) {
-                                system.borrow_mut().add_entity(*entity);
-                            } else {
-                                system.borrow_mut().remove_entity(*entity);
-                            }
-                        } else {
-                            system.borrow_mut().remove_entity(*entity);
-                        }
-                    }
-                }
+                Self::update_system_entities(&mut self.systems, &mut ec_wrapper);
             }
         }
         Ok(())
@@ -558,19 +553,7 @@ impl Registry {
                 let e0: TypeId = event.0;
                 let e1: Box<dyn Any> = event.1;
                 self.event_bus.dispatch(&mut ec_wrapper, e0, &*e1);
-            }
-        }
-        for entity in ec_wrapper.changed_entities() {
-            for system in self.systems.values_mut() {
-                if let Ok(has_components) = ec_wrapper.has_components(*entity) {
-                    if has_components.is_superset(system.borrow().required_components()) {
-                        system.borrow_mut().add_entity(*entity);
-                    } else {
-                        system.borrow_mut().remove_entity(*entity);
-                    }
-                } else {
-                    system.borrow_mut().remove_entity(*entity);
-                }
+                Self::update_system_entities(&mut self.systems, &mut ec_wrapper);
             }
         }
     }
