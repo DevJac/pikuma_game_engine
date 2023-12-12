@@ -126,31 +126,35 @@ fn square(
 }
 
 fn square_outline(
-    position: glam::UVec2,
-    width_height: glam::UVec2,
+    position: glam::Vec2,
+    width_height: glam::Vec2,
 ) -> [TextureVertex; SQUARE_OUTLINE_VERTS as usize] {
-    let lower_right = glam::UVec3::new(width_height.x, width_height.y, 0);
+    let lower_right = glam::UVec3::new(
+        width_height.x.max(0.0) as u32,
+        width_height.y.max(0.0) as u32,
+        0,
+    );
     let v0 = TextureVertex {
-        position: glam::Vec3::new(position.x as f32, position.y as f32, 0.0),
+        position: glam::Vec3::new(position.x, position.y, 0.0),
         uv: glam::Vec2::new(0.0, 0.0),
         lower_right,
     };
     let v1 = TextureVertex {
-        position: glam::Vec3::new(position.x as f32, (position.y + width_height.y) as f32, 0.0),
+        position: glam::Vec3::new(position.x, position.y + width_height.y, 0.0),
         uv: glam::Vec2::new(0.0, 1.0),
         lower_right,
     };
     let v2 = TextureVertex {
         position: glam::Vec3::new(
-            (position.x + width_height.x) as f32,
-            (position.y + width_height.y) as f32,
+            position.x + width_height.x,
+            position.y + width_height.y,
             0.0,
         ),
         uv: glam::Vec2::new(1.0, 1.0),
         lower_right,
     };
     let v3 = TextureVertex {
-        position: glam::Vec3::new((position.x + width_height.x) as f32, position.y as f32, 0.0),
+        position: glam::Vec3::new(position.x + width_height.x, position.y, 0.0),
         uv: glam::Vec2::new(1.0, 0.0),
         lower_right,
     };
@@ -446,7 +450,7 @@ impl LowResPass {
         self.vertex_buffer_vert_count += 1;
     }
 
-    fn draw_rectangle(&mut self, location: glam::UVec2, width_height: glam::UVec2) {
+    fn draw_rectangle(&mut self, location: glam::Vec2, width_height: glam::Vec2) {
         let square_vertices = square_outline(location, width_height);
         let square_bytes: &[u8] = bytemuck::cast_slice(square_vertices.as_slice());
         self.line_vertex_buffer_cpu.extend_from_slice(square_bytes);
@@ -711,7 +715,7 @@ impl Renderer {
             .draw_image(sprite_index, sprite_z, location)
     }
 
-    pub fn draw_rectangle(&mut self, location: glam::UVec2, width_height: glam::UVec2) {
+    pub fn draw_rectangle(&mut self, location: glam::Vec2, width_height: glam::Vec2) {
         self.low_res_pass.draw_rectangle(location, width_height)
     }
 

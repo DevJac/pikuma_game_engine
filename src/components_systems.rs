@@ -335,8 +335,8 @@ impl System for CollisionSystem {
                 ec_manager.get_component(*entity_a).unwrap().unwrap();
             if self.render_collision_boxes {
                 renderer.draw_rectangle(
-                    (rigid_body_a.position + collision_a.offset).as_uvec2(),
-                    collision_a.width_height.as_uvec2(),
+                    rigid_body_a.position + collision_a.offset,
+                    collision_a.width_height,
                 );
             }
             let world_space_collision_rectangle_a = Rectangle {
