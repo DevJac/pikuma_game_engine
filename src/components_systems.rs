@@ -151,7 +151,7 @@ impl System for RenderSystem {
             renderer.draw_image(
                 sprite_component.sprite_index,
                 sprite_component.sprite_layer.as_z(),
-                rigid_body_component.position.as_uvec2(),
+                rigid_body_component.position,
             );
         }
     }

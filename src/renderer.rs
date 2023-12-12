@@ -92,33 +92,33 @@ fn ndc_square() -> [Vertex; SQUARE_VERTS as usize] {
 }
 
 fn square(
-    position: glam::UVec2,
+    position: glam::Vec2,
     z: f32,
     texture_size: glam::UVec2,
     texture_index: u32,
 ) -> [TextureVertex; SQUARE_VERTS as usize] {
     let lower_right = glam::UVec3::new(texture_size.x, texture_size.y, texture_index);
     let v0 = TextureVertex {
-        position: glam::Vec3::new(position.x as f32, position.y as f32, z),
+        position: glam::Vec3::new(position.x, position.y, z),
         uv: glam::Vec2::new(0.0, 0.0),
         lower_right,
     };
     let v1 = TextureVertex {
-        position: glam::Vec3::new(position.x as f32, (position.y + texture_size.y) as f32, z),
+        position: glam::Vec3::new(position.x, position.y + texture_size.y as f32, z),
         uv: glam::Vec2::new(0.0, 1.0),
         lower_right,
     };
     let v2 = TextureVertex {
         position: glam::Vec3::new(
-            (position.x + texture_size.x) as f32,
-            (position.y + texture_size.y) as f32,
+            position.x + texture_size.x as f32,
+            position.y + texture_size.y as f32,
             z,
         ),
         uv: glam::Vec2::new(1.0, 1.0),
         lower_right,
     };
     let v3 = TextureVertex {
-        position: glam::Vec3::new((position.x + texture_size.x) as f32, position.y as f32, z),
+        position: glam::Vec3::new(position.x + texture_size.x as f32, position.y, z),
         uv: glam::Vec2::new(1.0, 0.0),
         lower_right,
     };
@@ -437,7 +437,7 @@ impl LowResPass {
         SpriteIndex(sprite_index)
     }
 
-    fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::UVec2) {
+    fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::Vec2) {
         let sprite_width_height: glam::UVec2 =
             self.loaded_sprites[sprite_index.0 as usize].width_height;
         let square_vertices = square(location, sprite_z, sprite_width_height, sprite_index.0);
@@ -706,7 +706,7 @@ impl Renderer {
         self.low_res_pass.load_sprite(&self.queue, sprite)
     }
 
-    pub fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::UVec2) {
+    pub fn draw_image(&mut self, sprite_index: SpriteIndex, sprite_z: f32, location: glam::Vec2) {
         self.low_res_pass
             .draw_image(sprite_index, sprite_z, location)
     }
