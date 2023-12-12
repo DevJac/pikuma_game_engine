@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::{
@@ -17,17 +19,17 @@ pub struct RigidBodyComponent {
 }
 
 pub struct MovementSystem {
-    required_components: std::collections::HashSet<std::any::TypeId>,
-    entities: std::collections::HashSet<Entity>,
+    required_components: HashSet<std::any::TypeId>,
+    entities: HashSet<Entity>,
 }
 
 impl MovementSystem {
     pub fn new() -> Self {
-        let mut required_components = std::collections::HashSet::new();
+        let mut required_components = HashSet::new();
         required_components.insert(std::any::TypeId::of::<RigidBodyComponent>());
         Self {
             required_components,
-            entities: std::collections::HashSet::new(),
+            entities: HashSet::new(),
         }
     }
 }
@@ -37,7 +39,7 @@ impl SystemBase for MovementSystem {
         self
     }
 
-    fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
+    fn required_components(&self) -> &HashSet<std::any::TypeId> {
         &self.required_components
     }
 
@@ -90,18 +92,18 @@ pub struct SpriteComponent {
 }
 
 pub struct RenderSystem {
-    required_components: std::collections::HashSet<std::any::TypeId>,
-    entities: std::collections::HashSet<Entity>,
+    required_components: HashSet<std::any::TypeId>,
+    entities: HashSet<Entity>,
 }
 
 impl RenderSystem {
     pub fn new() -> Self {
-        let mut required_components = std::collections::HashSet::new();
+        let mut required_components = HashSet::new();
         required_components.insert(std::any::TypeId::of::<RigidBodyComponent>());
         required_components.insert(std::any::TypeId::of::<SpriteComponent>());
         Self {
             required_components,
-            entities: std::collections::HashSet::new(),
+            entities: HashSet::new(),
         }
     }
 }
@@ -111,7 +113,7 @@ impl SystemBase for RenderSystem {
         self
     }
 
-    fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
+    fn required_components(&self) -> &HashSet<std::any::TypeId> {
         &self.required_components
     }
 
@@ -179,18 +181,18 @@ impl AnimationComponent {
 }
 
 pub struct AnimationSystem {
-    required_components: std::collections::HashSet<std::any::TypeId>,
-    entities: std::collections::HashSet<Entity>,
+    required_components: HashSet<std::any::TypeId>,
+    entities: HashSet<Entity>,
 }
 
 impl AnimationSystem {
     pub fn new() -> Self {
-        let mut required_components = std::collections::HashSet::new();
+        let mut required_components = HashSet::new();
         required_components.insert(std::any::TypeId::of::<SpriteComponent>());
         required_components.insert(std::any::TypeId::of::<AnimationComponent>());
         Self {
             required_components,
-            entities: std::collections::HashSet::new(),
+            entities: HashSet::new(),
         }
     }
 }
@@ -200,7 +202,7 @@ impl SystemBase for AnimationSystem {
         self
     }
 
-    fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
+    fn required_components(&self) -> &HashSet<std::any::TypeId> {
         &self.required_components
     }
 
@@ -281,19 +283,19 @@ pub struct CollisionComponent {
 }
 
 pub struct CollisionSystem {
-    required_components: std::collections::HashSet<std::any::TypeId>,
-    entities: std::collections::HashSet<Entity>,
+    required_components: HashSet<std::any::TypeId>,
+    entities: HashSet<Entity>,
     render_collision_boxes: bool,
 }
 
 impl CollisionSystem {
     pub fn new() -> Self {
-        let mut required_components = std::collections::HashSet::new();
+        let mut required_components = HashSet::new();
         required_components.insert(std::any::TypeId::of::<RigidBodyComponent>());
         required_components.insert(std::any::TypeId::of::<CollisionComponent>());
         Self {
             required_components,
-            entities: std::collections::HashSet::new(),
+            entities: HashSet::new(),
             render_collision_boxes: false,
         }
     }
@@ -304,7 +306,7 @@ impl SystemBase for CollisionSystem {
         self
     }
 
-    fn required_components(&self) -> &std::collections::HashSet<std::any::TypeId> {
+    fn required_components(&self) -> &HashSet<std::any::TypeId> {
         &self.required_components
     }
 
@@ -393,8 +395,76 @@ impl Handler<CollisionEvent> for CollisionSystem {
 
 impl Handler<PhysicalKey> for CollisionSystem {
     fn handle(&mut self, _ec_manager: &mut EntityComponentWrapper, event: &PhysicalKey) {
-        if let PhysicalKey::Code(KeyCode::KeyD) = event {
+        if let PhysicalKey::Code(KeyCode::KeyB) = event {
             self.render_collision_boxes = !self.render_collision_boxes;
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Keyboard Control
+///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone)]
+pub struct KeyboardControlComponent;
+
+pub struct KeyboardControlSystem {
+    required_components: HashSet<std::any::TypeId>,
+    entities: HashSet<Entity>,
+}
+
+impl KeyboardControlSystem {
+    pub fn new() -> Self {
+        let mut required_components = HashSet::new();
+        required_components.insert(std::any::TypeId::of::<RigidBodyComponent>());
+        required_components.insert(std::any::TypeId::of::<KeyboardControlComponent>());
+        Self {
+            required_components,
+            entities: HashSet::new(),
+        }
+    }
+}
+
+impl SystemBase for KeyboardControlSystem {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn required_components(&self) -> &HashSet<std::any::TypeId> {
+        &self.required_components
+    }
+
+    fn add_entity(&mut self, entity: Entity) {
+        self.entities.insert(entity);
+    }
+
+    fn remove_entity(&mut self, entity: Entity) {
+        self.entities.remove(&entity);
+    }
+}
+
+impl System for KeyboardControlSystem {
+    type Input<'i> = &'i HashSet<PhysicalKey>;
+
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, pressed_keys: Self::Input<'_>) {
+        let mut unit_velocity = glam::Vec2::ZERO;
+        if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
+            unit_velocity += glam::Vec2::new(-1.0, 0.0);
+        }
+        if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
+            unit_velocity += glam::Vec2::new(0.0, 1.0);
+        }
+        if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
+            unit_velocity += glam::Vec2::new(1.0, 0.0);
+        }
+        if pressed_keys.contains(&PhysicalKey::Code(KeyCode::KeyW)) {
+            unit_velocity += glam::Vec2::new(0.0, -1.0);
+        }
+        let velocity = unit_velocity * 80.0;
+        for entity in self.entities.iter() {
+            let rigid_body_component: &mut RigidBodyComponent =
+                ec_manager.get_component_mut(*entity).unwrap().unwrap();
+            rigid_body_component.velocity = velocity;
         }
     }
 }

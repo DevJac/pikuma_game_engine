@@ -168,6 +168,9 @@ impl Game {
                 },
             )
             .unwrap();
+        registry
+            .add_component(chopper, components_systems::KeyboardControlComponent {})
+            .unwrap();
         registry.add_system(Rc::new(RefCell::new(
             components_systems::MovementSystem::new(),
         )));
@@ -176,6 +179,9 @@ impl Game {
         )));
         registry.add_system(Rc::new(RefCell::new(
             components_systems::RenderSystem::new(),
+        )));
+        registry.add_system(Rc::new(RefCell::new(
+            components_systems::KeyboardControlSystem::new(),
         )));
         let collision_system = Rc::new(RefCell::new(components_systems::CollisionSystem::new()));
         registry.add_handler::<components_systems::CollisionEvent, _>(Rc::clone(&collision_system));
@@ -233,6 +239,9 @@ impl Game {
     }
 
     fn render(&mut self, delta_t: f32) {
+        self.registry
+            .run_system::<components_systems::KeyboardControlSystem>(&self.pressed_keys)
+            .unwrap();
         self.registry
             .run_system::<components_systems::MovementSystem>(delta_t)
             .unwrap();
