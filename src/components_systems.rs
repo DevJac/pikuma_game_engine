@@ -663,8 +663,16 @@ impl System for CameraFocusSystem {
             ec_manager.get_component(entity).unwrap().unwrap();
         // TODO: Constrain viewport at edges of map
         let focus = rigid_body_component.position + camera_focus_component.focus_offset;
+        let focus_top_left = focus - (camera_focus_component.viewport_size / 2.0);
+        let focus_top_left_out_of_bounds =
+            (camera_focus_component.map_top_left - focus_top_left).max(glam::Vec2::ZERO);
+        let focus_bottom_right = focus + (camera_focus_component.viewport_size / 2.0);
+        let focus_bottom_right_out_of_bounds =
+            (camera_focus_component.map_bottom_right - focus_bottom_right).min(glam::Vec2::ZERO);
         let camera = Camera {
-            top_left: focus - (camera_focus_component.viewport_size / 2.0),
+            top_left: focus_top_left
+                + focus_top_left_out_of_bounds
+                + focus_bottom_right_out_of_bounds,
             width_height: camera_focus_component.viewport_size,
         };
         renderer.set_camera(camera);
