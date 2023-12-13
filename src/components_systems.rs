@@ -89,6 +89,7 @@ impl Layer {
 pub struct SpriteComponent {
     pub sprite_index: SpriteIndex,
     pub sprite_layer: Layer,
+    pub size: glam::Vec2,
 }
 
 pub struct RenderSystem {
@@ -152,6 +153,7 @@ impl System for RenderSystem {
                 sprite_component.sprite_index,
                 sprite_component.sprite_layer.as_z(),
                 rigid_body_component.position,
+                sprite_component.size,
             );
         }
     }

@@ -52,6 +52,7 @@ impl Game {
                         glam::UVec2::new(16, 32),
                     )),
                     sprite_layer: components_systems::Layer::Ground,
+                    size: glam::Vec2::new(16.0, 32.0),
                 },
             )
             .unwrap();
@@ -74,6 +75,7 @@ impl Game {
                         glam::UVec2::new(32, 32),
                     )),
                     sprite_layer: components_systems::Layer::Ground,
+                    size: glam::Vec2::new(32.0, 32.0),
                 },
             )
             .unwrap();
@@ -105,6 +107,7 @@ impl Game {
                         glam::UVec2::new(32, 32),
                     )),
                     sprite_layer: components_systems::Layer::Ground,
+                    size: glam::Vec2::new(32.0, 32.0),
                 },
             )
             .unwrap();
@@ -136,6 +139,7 @@ impl Game {
                         glam::UVec2::new(32, 32),
                     )),
                     sprite_layer: components_systems::Layer::Air,
+                    size: glam::Vec2::new(32.0, 32.0),
                 },
             )
             .unwrap();
@@ -251,11 +255,15 @@ impl Game {
                     glam::UVec2::new(32, 32),
                 );
                 let background_tile = self.registry.create_entity();
+                let map_scale = 2.0;
                 self.registry
                     .add_component(
                         background_tile,
                         components_systems::RigidBodyComponent {
-                            position: glam::Vec2::new(32.0 * col as f32, 32.0 * row as f32),
+                            position: glam::Vec2::new(
+                                32.0 * map_scale * col as f32,
+                                32.0 * map_scale * row as f32,
+                            ),
                             velocity: glam::Vec2::new(0.0, 0.0),
                         },
                     )
@@ -266,6 +274,7 @@ impl Game {
                         components_systems::SpriteComponent {
                             sprite_index: self.renderer.load_sprite(sprite),
                             sprite_layer: components_systems::Layer::Background,
+                            size: glam::Vec2::new(32.0 * map_scale, 32.0 * map_scale),
                         },
                     )
                     .unwrap();
