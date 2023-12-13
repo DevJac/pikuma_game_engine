@@ -131,7 +131,7 @@ impl Game {
                 chopper,
                 components_systems::SpriteComponent {
                     sprite_index: renderer.load_sprite(Sprite::new(
-                        "assets/images/chopper.png".into(),
+                        "assets/images/chopper-spritesheet.png".into(),
                         glam::UVec2::new(0, 0),
                         glam::UVec2::new(32, 32),
                     )),
@@ -142,17 +142,53 @@ impl Game {
         registry
             .add_component(
                 chopper,
-                components_systems::AnimationComponent::new(
+                components_systems::MotionAnimationComponent::new(
                     1.0 / 15.0,
                     vec![
                         renderer.load_sprite(Sprite::new(
-                            "assets/images/chopper.png".into(),
-                            glam::UVec2::new(0, 0),
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 0, 32 * 3),
                             glam::UVec2::new(32, 32),
                         )),
                         renderer.load_sprite(Sprite::new(
-                            "assets/images/chopper.png".into(),
-                            glam::UVec2::new(32, 0),
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 1, 32 * 3),
+                            glam::UVec2::new(32, 32),
+                        )),
+                    ],
+                    vec![
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 0, 32 * 2),
+                            glam::UVec2::new(32, 32),
+                        )),
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 1, 32 * 2),
+                            glam::UVec2::new(32, 32),
+                        )),
+                    ],
+                    vec![
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 0, 32 * 1),
+                            glam::UVec2::new(32, 32),
+                        )),
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 1, 32 * 1),
+                            glam::UVec2::new(32, 32),
+                        )),
+                    ],
+                    vec![
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 0, 32 * 0),
+                            glam::UVec2::new(32, 32),
+                        )),
+                        renderer.load_sprite(Sprite::new(
+                            "assets/images/chopper-spritesheet.png".into(),
+                            glam::UVec2::new(32 * 1, 32 * 0),
                             glam::UVec2::new(32, 32),
                         )),
                     ],
@@ -176,6 +212,9 @@ impl Game {
         )));
         registry.add_system(Rc::new(RefCell::new(
             components_systems::AnimationSystem::new(),
+        )));
+        registry.add_system(Rc::new(RefCell::new(
+            components_systems::MotionAnimationSystem::new(),
         )));
         registry.add_system(Rc::new(RefCell::new(
             components_systems::RenderSystem::new(),
@@ -250,6 +289,9 @@ impl Game {
             .unwrap();
         self.registry
             .run_system::<components_systems::AnimationSystem>(delta_t)
+            .unwrap();
+        self.registry
+            .run_system::<components_systems::MotionAnimationSystem>(delta_t)
             .unwrap();
         self.registry
             .run_system::<components_systems::RenderSystem>(&mut self.renderer)

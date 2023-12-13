@@ -240,6 +240,135 @@ impl System for AnimationSystem {
     }
 }
 
+#[derive(Clone)]
+pub struct MotionAnimationComponent {
+    pub left_frames: Vec<SpriteIndex>,
+    pub down_frames: Vec<SpriteIndex>,
+    pub right_frames: Vec<SpriteIndex>,
+    pub up_frames: Vec<SpriteIndex>,
+    pub last_velocity: glam::Vec2,
+    pub frame_time: f32,
+    pub current_frame: u32,
+    pub current_frame_time: f32,
+}
+
+impl MotionAnimationComponent {
+    pub fn new(
+        frame_time: f32,
+        left_frames: Vec<SpriteIndex>,
+        down_frames: Vec<SpriteIndex>,
+        right_frames: Vec<SpriteIndex>,
+        up_frames: Vec<SpriteIndex>,
+    ) -> Self {
+        Self {
+            left_frames,
+            down_frames,
+            right_frames,
+            up_frames,
+            frame_time,
+            current_frame: 0,
+            current_frame_time: 0.0,
+            last_velocity: glam::Vec2::ZERO,
+        }
+    }
+}
+
+pub struct MotionAnimationSystem {
+    required_components: HashSet<std::any::TypeId>,
+    entities: HashSet<Entity>,
+}
+
+impl MotionAnimationSystem {
+    pub fn new() -> Self {
+        let mut required_components = HashSet::new();
+        required_components.insert(std::any::TypeId::of::<SpriteComponent>());
+        required_components.insert(std::any::TypeId::of::<MotionAnimationComponent>());
+        required_components.insert(std::any::TypeId::of::<RigidBodyComponent>());
+        Self {
+            required_components,
+            entities: HashSet::new(),
+        }
+    }
+}
+
+impl SystemBase for MotionAnimationSystem {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn required_components(&self) -> &HashSet<std::any::TypeId> {
+        &self.required_components
+    }
+
+    fn add_entity(&mut self, entity: Entity) {
+        self.entities.insert(entity);
+    }
+
+    fn remove_entity(&mut self, entity: Entity) {
+        self.entities.remove(&entity);
+    }
+}
+
+impl System for MotionAnimationSystem {
+    type Input<'i> = f32;
+
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, delta_time: Self::Input<'_>) {
+        for entity in self.entities.iter() {
+            let rigid_body_component: &RigidBodyComponent =
+                ec_manager.get_component(*entity).unwrap().unwrap();
+            let mut velocity = rigid_body_component.velocity;
+            let motion_animation_component: &mut MotionAnimationComponent =
+                ec_manager.get_component_mut(*entity).unwrap().unwrap();
+            if velocity == glam::Vec2::ZERO {
+                velocity = motion_animation_component.last_velocity;
+            }
+            motion_animation_component.last_velocity = velocity;
+            let cardinal_frames = [
+                (
+                    glam::Vec2::new(0.0, 1.0),
+                    &motion_animation_component.down_frames,
+                ),
+                (
+                    glam::Vec2::new(1.0, 0.0),
+                    &motion_animation_component.right_frames,
+                ),
+                (
+                    glam::Vec2::new(-1.0, 0.0),
+                    &motion_animation_component.left_frames,
+                ),
+                (
+                    glam::Vec2::new(0.0, -1.0),
+                    &motion_animation_component.up_frames,
+                ),
+            ];
+            let (_, frames) = cardinal_frames
+                .iter()
+                .max_by(|(dir0, _), (dir1, _)| {
+                    let dot0 = velocity.dot(*dir0);
+                    let dot1 = velocity.dot(*dir1);
+                    dot0.partial_cmp(&dot1).unwrap()
+                })
+                .unwrap();
+            motion_animation_component.current_frame_time += delta_time;
+            let mut update_sprite_frame: Option<SpriteIndex> = None;
+            if motion_animation_component.current_frame_time > motion_animation_component.frame_time
+            {
+                motion_animation_component.current_frame_time -=
+                    motion_animation_component.frame_time;
+                motion_animation_component.current_frame =
+                    (motion_animation_component.current_frame + 1) % frames.len() as u32;
+                update_sprite_frame =
+                    Some(frames[motion_animation_component.current_frame as usize]);
+            }
+            if let Some(update_sprite_frame) = update_sprite_frame {
+                let sprite_component: &mut SpriteComponent =
+                    ec_manager.get_component_mut(*entity).unwrap().unwrap();
+                sprite_component.sprite_index = update_sprite_frame;
+            }
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Collision
 ///////////////////////////////////////////////////////////////////////////////
