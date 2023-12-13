@@ -23,6 +23,13 @@ impl Sprite {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+pub struct Camera {
+    pub top_left: glam::Vec2,
+    pub width_height: glam::Vec2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 struct Vertex {
     position: glam::Vec2,
     uv: glam::Vec2,
@@ -172,6 +179,8 @@ fn square_outline(
 struct LowResPass {
     low_res_texture: wgpu::Texture,
     low_res_texture_view: wgpu::TextureView,
+    camera: Camera,
+    camera_buffer: wgpu::Buffer,
     // Sprite drawing
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
@@ -242,20 +251,21 @@ impl LowResPass {
                 }),
                 multiview: None,
             });
-        let uniform_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("low res uniform buffer"),
-            size: std::mem::size_of::<glam::UVec2>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM,
+        let camera = Camera {
+            top_left: glam::Vec2::new(0.0, 0.0),
+            width_height: glam::Vec2::new(canvas_width as f32, canvas_height as f32),
+        };
+        let camera_buffer: wgpu::Buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("low res camera buffer"),
+            size: std::mem::size_of::<Camera>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: true,
         });
-        uniform_buffer
+        camera_buffer
             .slice(..)
             .get_mapped_range_mut()
-            .copy_from_slice(bytemuck::bytes_of(&glam::UVec2::new(
-                canvas_width,
-                canvas_height,
-            )));
-        uniform_buffer.unmap();
+            .copy_from_slice(bytemuck::bytes_of(&camera));
+        camera_buffer.unmap();
         let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("low res sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -293,7 +303,7 @@ impl LowResPass {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &uniform_buffer,
+                        buffer: &camera_buffer,
                         offset: 0,
                         size: None,
                     }),
@@ -365,7 +375,7 @@ impl LowResPass {
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &uniform_buffer,
+                        buffer: &camera_buffer,
                         offset: 0,
                         size: None,
                     }),
@@ -374,6 +384,8 @@ impl LowResPass {
         Self {
             low_res_texture,
             low_res_texture_view,
+            camera,
+            camera_buffer,
             pipeline,
             bind_group,
             vertex_buffer_cpu: Vec::new(),
@@ -387,6 +399,10 @@ impl LowResPass {
             line_vertex_buffer,
             line_vertex_buffer_vert_count: 0,
         }
+    }
+
+    fn set_camera(&mut self, camera: Camera) {
+        self.camera = camera;
     }
 
     fn load_sprite(&mut self, queue: &wgpu::Queue, sprite: Sprite) -> SpriteIndex {
@@ -487,6 +503,8 @@ impl LowResPass {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+        // Update camera
+        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&self.camera));
         // Draw sprites
         queue.write_buffer(&self.vertex_buffer, 0, self.vertex_buffer_cpu.as_slice());
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -713,6 +731,10 @@ impl Renderer {
                 view_formats: vec![],
             },
         );
+    }
+
+    pub fn set_camera(&mut self, camera: Camera) {
+        self.low_res_pass.set_camera(camera);
     }
 
     pub fn load_sprite(&mut self, sprite: Sprite) -> SpriteIndex {

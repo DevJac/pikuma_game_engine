@@ -5,7 +5,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::{
     ecs::{Entity, EntityComponentWrapper, System, SystemBase},
     event_bus::{Handler, HandlerBase},
-    renderer::{Renderer, SpriteIndex},
+    renderer::{Camera, Renderer, SpriteIndex},
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -597,5 +597,76 @@ impl System for KeyboardControlSystem {
                 ec_manager.get_component_mut(*entity).unwrap().unwrap();
             rigid_body_component.velocity = velocity;
         }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Camera
+///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone)]
+pub struct CameraFocusComponent {
+    pub focus_offset: glam::Vec2,
+    pub viewport_size: glam::Vec2,
+    pub map_top_left: glam::Vec2,
+    pub map_bottom_right: glam::Vec2,
+}
+
+pub struct CameraFocusSystem {
+    required_components: HashSet<std::any::TypeId>,
+    entity: Option<Entity>,
+}
+
+impl CameraFocusSystem {
+    pub fn new() -> Self {
+        let mut required_components = HashSet::new();
+        required_components.insert(std::any::TypeId::of::<RigidBodyComponent>());
+        required_components.insert(std::any::TypeId::of::<CameraFocusComponent>());
+        Self {
+            required_components,
+            entity: None,
+        }
+    }
+}
+
+impl SystemBase for CameraFocusSystem {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn required_components(&self) -> &HashSet<std::any::TypeId> {
+        &self.required_components
+    }
+
+    fn add_entity(&mut self, entity: Entity) {
+        self.entity = Some(entity);
+    }
+
+    fn remove_entity(&mut self, entity: Entity) {
+        if self.entity == Some(entity) {
+            self.entity = None;
+        }
+    }
+}
+
+impl System for CameraFocusSystem {
+    type Input<'i> = &'i mut Renderer;
+
+    fn run(&self, ec_manager: &mut EntityComponentWrapper, renderer: Self::Input<'_>) {
+        if self.entity.is_none() {
+            return;
+        }
+        let entity = self.entity.unwrap();
+        let rigid_body_component: &RigidBodyComponent =
+            ec_manager.get_component(entity).unwrap().unwrap();
+        let camera_focus_component: &CameraFocusComponent =
+            ec_manager.get_component(entity).unwrap().unwrap();
+        // TODO: Constrain viewport at edges of map
+        let focus = rigid_body_component.position + camera_focus_component.focus_offset;
+        let camera = Camera {
+            top_left: focus - (camera_focus_component.viewport_size / 2.0),
+            width_height: camera_focus_component.viewport_size,
+        };
+        renderer.set_camera(camera);
     }
 }

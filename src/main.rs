@@ -211,6 +211,17 @@ impl Game {
         registry
             .add_component(chopper, components_systems::KeyboardControlComponent {})
             .unwrap();
+        registry
+            .add_component(
+                chopper,
+                components_systems::CameraFocusComponent {
+                    focus_offset: glam::Vec2::new(16.0, 16.0),
+                    viewport_size: glam::Vec2::new(800.0, 600.0),
+                    map_top_left: glam::Vec2::ZERO,
+                    map_bottom_right: glam::Vec2::new(25.0 * 32.0 * 2.0, 20.0 * 32.0 * 2.0),
+                },
+            )
+            .unwrap();
         registry.add_system(Rc::new(RefCell::new(
             components_systems::MovementSystem::new(),
         )));
@@ -219,6 +230,9 @@ impl Game {
         )));
         registry.add_system(Rc::new(RefCell::new(
             components_systems::MotionAnimationSystem::new(),
+        )));
+        registry.add_system(Rc::new(RefCell::new(
+            components_systems::CameraFocusSystem::new(),
         )));
         registry.add_system(Rc::new(RefCell::new(
             components_systems::RenderSystem::new(),
@@ -301,6 +315,9 @@ impl Game {
             .unwrap();
         self.registry
             .run_system::<components_systems::MotionAnimationSystem>(delta_t)
+            .unwrap();
+        self.registry
+            .run_system::<components_systems::CameraFocusSystem>(&mut self.renderer)
             .unwrap();
         self.registry
             .run_system::<components_systems::RenderSystem>(&mut self.renderer)
