@@ -380,6 +380,25 @@ fn main() {
                 } => {
                     event_loop_window_target.exit();
                 }
+                winit::event::WindowEvent::KeyboardInput {
+                    device_id: _,
+                    event:
+                        winit::event::KeyEvent {
+                            physical_key,
+                            logical_key: _,
+                            text: _,
+                            location: _,
+                            state,
+                            repeat: _,
+                            ..
+                        },
+                    is_synthetic: _,
+                } => {
+                    game.key_event(winit::event::RawKeyEvent {
+                        physical_key,
+                        state,
+                    });
+                }
                 winit::event::WindowEvent::Resized(_) => {
                     game.configure_surface();
                 }
